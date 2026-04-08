@@ -1,0 +1,54 @@
+name: daylo_app
+description: DAYLO - Your personal growth assistant
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.2
+  pin_code_fields: ^8.0.1
+  image_picker: ^1.2.1
+  qr_flutter: ^4.1.0
+  provider: ^6.1.5+1
+  mobile_scanner: ^7.1.4
+  barcode_widget: ^2.0.4
+  # health: ^13.2.1
+  permission_handler: ^12.0.1
+  share_plus: ^12.0.1
+  path_provider: ^2.1.5
+  shared_preferences: ^2.5.4
+  http: ^1.6.0
+  weather_pack: ^1.3.0
+  geolocator: ^14.0.2
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  flutter_local_notifications: ^19.5.0
+  video_player: ^2.8.6
+  timezone: ^0.10.1
+  translator: ^1.0.4+1
+  google_generative_ai: ^0.4.7
+  flutter_cupertino_desktop_kit: ^0.0.10
+  fl_chart: ^0.70.2
+#   firebase_core: ^4.4.0
+#   firebase_auth: ^6.1.4
+#   cloud_firestore: ^6.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/images/achievements/
+    - assets/images/recipes/

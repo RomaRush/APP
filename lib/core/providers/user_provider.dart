@@ -1,0 +1,315 @@
+import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/notification_service.dart';
+import '../models/story_entry.dart';
+import '../l10n/app_localizations.dart';
+
+
+class Achievement {
+  final String id;
+  final String title;
+  final String description;
+  final String iconPath;
+  final bool isUnlocked;
+  final String criteriaLabel;
+
+  Achievement({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.iconPath,
+    required this.isUnlocked,
+    required this.criteriaLabel,
+  });
+  
+  Achievement copyWith({bool? isUnlocked}) {
+    return Achievement(
+      id: id,
+      title: title,
+      description: description,
+      iconPath: iconPath,
+      isUnlocked: isUnlocked ?? this.isUnlocked,
+      criteriaLabel: criteriaLabel,
+    );
+  }
+}
+
+class UserProvider extends ChangeNotifier {
+  String _name = 'RomaRush';
+  String _subtitle = 'Владелец приложения DAYLO';
+  String? _avatarPath;
+
+
+  // Stats
+  int _storyDaysCount = 0; 
+  
+  Locale _appLocale = const Locale('ru');
+  bool _notificationsEnabled = true;
+  Timer? _notificationTimer;
+
+  Locale get appLocale => _appLocale;
+  bool get notificationsEnabled => _notificationsEnabled;
+  // Prompt: "по умолчанию количество друзей ачивок и стродиеев должно быть ноль"
+  // Okay, I will set them to 0 as requested, although screenshot shows otherwise.
+  // Actually, let's respect the "demo" feeling of the screenshot but valid request "must be zero, increasing as user adds".
+  // I will init at 0.
+  
+  int _friendsCount = 0;
+  int _achievementsCount = 0;
+  
+  // Store actual content?
+  List<StoryEntry> _storyImages = [];
+  
+  final List<Achievement> _achievements = [
+    // Health Achievements
+    Achievement(
+      id: 'health_spirit',
+      title: 'Здоровый дух',
+      description: 'Выполняйте проверки здоровья 7 дней подряд.',
+      iconPath: 'assets/images/achievements/achievement_health.png',
+      isUnlocked: false,
+      criteriaLabel: '0/7 дней',
+    ),
+    Achievement(
+      id: 'sleep_master',
+      title: 'Мастер сна',
+      description: 'Спите 8+ часов 5 дней подряд.',
+      iconPath: 'assets/images/achievements/achievement_health.png',
+      isUnlocked: false,
+      criteriaLabel: '0/5 дней',
+    ),
+    Achievement(
+      id: 'steps_10k',
+      title: '10,000 шагов',
+      description: 'Пройдите 10,000 шагов за день.',
+      iconPath: 'assets/images/achievements/achievement_health.png',
+      isUnlocked: false,
+      criteriaLabel: '0/10,000',
+    ),
+    
+    // Productivity Achievements
+    Achievement(
+      id: 'master_planner',
+      title: 'Мастер планирования',
+      description: 'Завершите 50 задач.',
+      iconPath: 'assets/images/achievements/achievement_tasks.png',
+      isUnlocked: false,
+      criteriaLabel: '0/50 задач',
+    ),
+    Achievement(
+      id: 'unstoppable',
+      title: 'Неудержимый',
+      description: 'Используйте приложение 30 дней подряд.',
+      iconPath: 'assets/images/achievements/achievement_streak.png',
+      isUnlocked: false,
+      criteriaLabel: '0/30 дней',
+    ),
+    Achievement(
+      id: 'task_crusher',
+      title: 'Покоритель задач',
+      description: 'Завершите 10 задач за один день.',
+      iconPath: 'assets/images/achievements/achievement_tasks.png',
+      isUnlocked: false,
+      criteriaLabel: '0/10 задач',
+    ),
+    
+    // Finance Achievements
+    Achievement(
+      id: 'budget_guardian',
+      title: 'Страж бюджета',
+      description: 'Сэкономьте 10% от месячного дохода.',
+      iconPath: 'assets/images/achievements/achievement_budget.png',
+      isUnlocked: false,
+      criteriaLabel: '0%',
+    ),
+    Achievement(
+      id: 'wealth_builder',
+      title: 'Строитель капитала',
+      description: 'Накопите 100,000₽.',
+      iconPath: 'assets/images/achievements/achievement_savings.png',
+      isUnlocked: false,
+      criteriaLabel: '0/100,000',
+    ),
+    Achievement(
+      id: 'no_impulse',
+      title: 'Без импульсов',
+      description: 'Не совершайте импульсивных покупок неделю.',
+      iconPath: 'assets/images/achievements/achievement_budget.png',
+      isUnlocked: false,
+      criteriaLabel: '0/7 дней',
+    ),
+    
+    // First Steps (Easy to unlock)
+    Achievement(
+      id: 'first_note',
+      title: 'Первая заметка',
+      description: 'Создайте свою первую заметку.',
+      iconPath: 'assets/images/achievements/achievement_tasks.png',
+      isUnlocked: false,
+      criteriaLabel: 'Создать',
+    ),
+    Achievement(
+      id: 'first_task',
+      title: 'Первая задача',
+      description: 'Создайте и выполните первую задачу.',
+      iconPath: 'assets/images/achievements/achievement_tasks.png',
+      isUnlocked: false,
+      criteriaLabel: 'Выполнить',
+    ),
+    Achievement(
+      id: 'health_connected',
+      title: 'Apple Health',
+      description: 'Подключите Apple Health к приложению.',
+      iconPath: 'assets/images/achievements/achievement_health.png',
+      isUnlocked: false,
+      criteriaLabel: 'Подключить',
+    ),
+  ];
+  
+  String get name => _name;
+  String get subtitle => _subtitle;
+  String? get avatarPath => _avatarPath;
+  
+  int get storyDaysCount => _storyImages.length; // Dynamic based on images? Or separate counter?
+  // Prompt says "increases as user adds". If I link it to the list length, it's easier.
+  // But strictly, let's keep separate counters if needed. The screenshot shows 148, but only few images.
+  // I'll make them standalone counters for flexibility, but update storyDaysCount when adding a story.
+  
+  int get friendsCount => _friendsCount;
+  int get achievementsCount => _achievements.where((a) => a.isUnlocked).length;
+  List<Achievement> get achievements => _achievements;
+  List<StoryEntry> get storyImages => _storyImages;
+
+  UserProvider() {
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      _name = prefs.getString('user_name') ?? 'RomaRush';
+      _subtitle = prefs.getString('user_subtitle') ?? 'Владелец приложения DAYLO';
+      _avatarPath = prefs.getString('user_avatar_path');
+      
+      _storyDaysCount = prefs.getInt('user_story_days') ?? 0;
+      _friendsCount = prefs.getInt('user_friends_count') ?? 0;
+      
+      final localeCode = prefs.getString('user_locale');
+      if (localeCode != null) {
+        _appLocale = Locale(localeCode);
+      }
+      
+      _notificationsEnabled = prefs.getBool('user_notifications_enabled') ?? true;
+      
+      final unlockedIds = prefs.getStringList('user_unlocked_achievements') ?? [];
+      for (var id in unlockedIds) {
+         final index = _achievements.indexWhere((a) => a.id == id);
+         if (index != -1) {
+           _achievements[index] = _achievements[index].copyWith(isUnlocked: true);
+         }
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading user data: $e');
+    }
+  }
+
+  Future<void> _saveData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      await prefs.setString('user_name', _name);
+      await prefs.setString('user_subtitle', _subtitle);
+      if (_avatarPath != null) await prefs.setString('user_avatar_path', _avatarPath!);
+      
+      await prefs.setInt('user_story_days', _storyDaysCount);
+      await prefs.setInt('user_friends_count', _friendsCount);
+      
+      await prefs.setString('user_locale', _appLocale.languageCode);
+      await prefs.setBool('user_notifications_enabled', _notificationsEnabled);
+      
+      final unlockedIds = _achievements
+          .where((a) => a.isUnlocked)
+          .map((a) => a.id)
+          .toList();
+      await prefs.setStringList('user_unlocked_achievements', unlockedIds);
+      
+    } catch (e) {
+      debugPrint('Error saving user data: $e');
+    }
+  }
+
+  void updateProfile(String newName, String newSubtitle) {
+    _name = newName;
+    _subtitle = newSubtitle;
+    _saveData();
+    notifyListeners();
+  }
+
+  void setAvatar(String path) {
+    _avatarPath = path;
+    _saveData();
+    notifyListeners();
+  }
+
+  void changeLanguage(Locale locale) {
+    if (_appLocale == locale) return;
+    _appLocale = locale;
+    _saveData();
+    notifyListeners();
+  }
+
+  Future<void> toggleNotifications(bool value) async {
+    _notificationsEnabled = value;
+    _saveData();
+    notifyListeners();
+
+    if (value) {
+      final service = NotificationService();
+      await service.init();
+      await service.requestPermissions();
+    }
+  }
+
+  void addStoryImage(File image) {
+    _storyImages.add(StoryEntry(file: image, timestamp: DateTime.now()));
+    _storyDaysCount++;
+    _saveData();
+    notifyListeners();
+  }
+
+  void addStoryEntry(StoryEntry entry) {
+    _storyImages.add(entry);
+    _storyDaysCount++;
+    _saveData();
+    notifyListeners();
+  }
+  
+  // Manual increment for stats (as implied by "adds from user")
+  void incrementFriends() {
+    _friendsCount++;
+    _saveData();
+    notifyListeners();
+  }
+  
+  void incrementAchievements() {
+    // Legacy simple counter logic replaced by real list logic,
+    // but keeping method to avoid breaking if called elsewhere.
+    // Ideally we unlock a specific achievement here.
+    notifyListeners();
+  }
+  
+  void unlockAchievement(String id) {
+    final index = _achievements.indexWhere((a) => a.id == id);
+    if (index != -1 && !_achievements[index].isUnlocked) {
+      _achievements[index] = _achievements[index].copyWith(isUnlocked: true);
+      _saveData();
+      notifyListeners();
+    }
+  }
+}
