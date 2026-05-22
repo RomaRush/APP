@@ -5,10 +5,10 @@ import 'work_provider.dart';
 import 'nutrition_provider.dart';
 
 class SmartLifeProvider extends ChangeNotifier {
-  final HealthProvider health;
-  final WorkProvider work;
-  final FinanceProvider finance;
-  final NutritionProvider nutrition;
+  HealthProvider health;
+  WorkProvider work;
+  FinanceProvider finance;
+  NutritionProvider nutrition;
 
   SmartLifeProvider({
     required this.health,
@@ -17,44 +17,60 @@ class SmartLifeProvider extends ChangeNotifier {
     required this.nutrition,
   });
 
+  void update({
+    HealthProvider? health,
+    WorkProvider? work,
+    FinanceProvider? finance,
+    NutritionProvider? nutrition,
+  }) {
+    if (health != null) this.health = health;
+    if (work != null) this.work = work;
+    if (finance != null) this.finance = finance;
+    if (nutrition != null) this.nutrition = nutrition;
+    notifyListeners();
+  }
+
   // --- Calculated Metrics ---
 
   /// Body Battery (0-100%)
   /// Based on sleep hours (Health), steps (Health), and food quality (Nutrition - placeholder concept)
   int get bodyBattery {
-    double score = 100;
-    
+    double score = 60; // Neutral baseline — not 100, avoids artificially high starting point
+
     // 1. Sleep impact (Target 8 hours)
-    // If sleep is < 5 hours, significant penalty
     double sleep = health.sleepHours;
-    if (sleep < 5) {
-      score -= 40;
-    } else if (sleep < 7) {
-      score -= 20;
-    } else if (sleep > 9) {
-      score -= 5; // Oversleeping slight penalty
-    }
-
-    // 2. Mental State penalty
-    if (health.mentalStatus == 'Плохо' || health.mentalStatus == 'Ужасно') {
-      score -= 30;
-    } else if (health.mentalStatus == 'Нормально') {
-      score -= 10;
-    }
-
-    // 3. Activity Boost (Steps)
-    // Up to +10 bonus for good activity
-    if (health.steps > 8000) {
-      score += 10;
-    } else if (health.steps > 5000) {
+    if (sleep >= 8) {
+      score += 30;
+    } else if (sleep >= 6) {
+      score += 15;
+    } else if (sleep >= 5) {
       score += 5;
+    } else if (sleep > 0) {
+      score -= 20; // only penalize if sleep was actually tracked and is very short
     }
 
-    // 4. Hydration Check (Nutrition)
-    // If water goal not met by evening, slight penalty (Simulated logic)
-    // We don't have time-of-day check strictly here, but let's assume if water is very low, it drags down.
-    if (nutrition.waterGlasses < 2) {
-      score -= 10;
+    // 2. Mental State
+    if (health.mentalStatus == 'Отлично' || health.mentalStatus == 'Хорошо') {
+      score += 10;
+    } else if (health.mentalStatus == 'Плохо' || health.mentalStatus == 'Ужасно') {
+      score -= 20;
+    }
+
+    // 3. Activity Boost (Steps) — only positive contribution
+    if (health.steps > 8000) {
+      score += 15;
+    } else if (health.steps > 5000) {
+      score += 8;
+    } else if (health.steps > 2000) {
+      score += 3;
+    }
+    // steps == 0 → no penalty, just no bonus
+
+    // 4. Hydration
+    if (nutrition.waterGlasses >= nutrition.waterGoal) {
+      score += 5;
+    } else if (nutrition.waterGlasses < 2 && nutrition.waterGlasses > 0) {
+      score -= 5; // only penalize if actively tracked and very low
     }
 
     return score.clamp(0, 100).round();

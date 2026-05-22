@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 // import 'package:firebase_core/firebase_core.dart';
 // import 'package:firebase_auth/firebase_auth.dart';
 import 'core/theme/app_theme.dart';
-import 'screens/welcome_screen.dart';
 import 'screens/main_screen.dart';
 // import 'screens/auth/login_screen.dart';
 // import 'screens/email_verification_screen.dart';
@@ -17,6 +16,8 @@ import 'core/services/weather_service.dart';
 import 'core/providers/smart_life_provider.dart';
 import 'core/providers/notes_provider.dart';
 import 'core/providers/todo_provider.dart';
+import 'core/services/notification_service.dart';
+import 'core/services/background_service.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/l10n/app_localizations.dart';
@@ -24,35 +25,40 @@ import 'core/l10n/app_localizations.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Firebase
-  // Note: This requires google-services.json (Android) and GoogleService-Info.plist (iOS)
-  // If not present, this line might crash or warn.
-  // try {
-  //   await Firebase.initializeApp();
-  // } catch (e) {
-  //   debugPrint('Firebase Init Error: $e');
-  // }
-  
-  // Set preferred orientations
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-  
-  // Set system UI overlay style
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
-  
-  // Enable edge-to-edge
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  try {
+    // Initialize notification service early
+    await NotificationService().init();
 
-  runApp(const DayloApp());
+    // Initialize background service (don't await to prevent blocking UI if it takes too long)
+    BackgroundService.initializeService().catchError((e) {
+      debugPrint('Background Service Error: $e');
+    });
+    
+    // Set preferred orientations
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    
+    // Set system UI overlay style
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
+    
+    // Enable edge-to-edge
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    runApp(const DayloApp());
+  } catch (e, stack) {
+    debugPrint('STARTUP_ERROR: $e');
+    debugPrint('STACK_TRACE: $stack');
+    runApp(MaterialApp(home: Scaffold(body: Center(child: Text('Fatal Error: $e')))));
+  }
 }
 
 class DayloApp extends StatelessWidget {
@@ -77,13 +83,23 @@ class DayloApp extends StatelessWidget {
             finance: Provider.of<FinanceProvider>(context, listen: false),
             nutrition: Provider.of<NutritionProvider>(context, listen: false),
           ),
-          update: (context, health, work, finance, nutrition, previous) =>
-              SmartLifeProvider(
-            health: health,
-            work: work,
-            finance: finance,
-            nutrition: nutrition,
-          ),
+          update: (context, health, work, finance, nutrition, previous) {
+            if (previous == null) {
+              return SmartLifeProvider(
+                health: health,
+                work: work,
+                finance: finance,
+                nutrition: nutrition,
+              );
+            }
+            previous.update(
+              health: health,
+              work: work,
+              finance: finance,
+              nutrition: nutrition,
+            );
+            return previous;
+          },
         ),
       ],
       child: Consumer<UserProvider>(
@@ -96,6 +112,7 @@ class DayloApp extends StatelessWidget {
             supportedLocales: const [
               Locale('en', ''),
               Locale('ru', ''),
+              Locale('zh', ''),
             ],
             localizationsDelegates: const [
               AppLocalizations.delegate,

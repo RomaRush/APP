@@ -58,6 +58,29 @@ class AppLocalizations {
       'notification_test_title': 'Тестовое уведомление',
       'notification_test_body': 'Уведомления работают корректно! 🚀',
     },
+    'zh': {
+      'home_title': '主页',
+      'profile_title': '个人资料',
+      'settings_theme': '更改应用主题',
+      'settings_icon': '更改应用图标',
+      'settings_notifications': '通知',
+      'settings_rate': '评价应用',
+      'settings_contact': '联系经理',
+      'settings_language': '语言',
+      'settings_logout': '登出',
+      'story_days': '故事日',
+      'friends': '朋友',
+      'achievements': '成就',
+      'edit_profile': '编辑个人资料',
+      'save': '保存',
+      'cancel': '取消',
+      'name': '名字',
+      'description': '描述',
+      'expand': '展开',
+      'no_stories': '还没有故事',
+      'notification_test_title': '测试通知',
+      'notification_test_body': '通知工作正常！🚀',
+    },
   };
 
   String get(String key) {
@@ -69,7 +92,7 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
   const _AppLocalizationsDelegate();
 
   @override
-  bool isSupported(Locale locale) => ['en', 'ru'].contains(locale.languageCode);
+  bool isSupported(Locale locale) => ['en', 'ru', 'zh'].contains(locale.languageCode);
 
   @override
   Future<AppLocalizations> load(Locale locale) async {

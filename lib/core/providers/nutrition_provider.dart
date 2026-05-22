@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/open_food_facts_service.dart';
@@ -205,6 +206,7 @@ class NutritionProvider extends ChangeNotifier {
   List<RecipeData> get foundRecipes => _foundRecipes;
   bool get isSearchingRecipes => _isSearchingRecipes;
   List<DrinkLog> get todaysDrinks => _todaysDrinks;
+  Map<String, Map<String, List<Product>>> get allMeals => _meals;
 
   String get _dateKey => '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
 
@@ -345,6 +347,11 @@ class NutritionProvider extends ChangeNotifier {
     }
   }
 
+  void removeProductSet(ProductSet set) {
+    _productSets.remove(set);
+    notifyListeners();
+  }
+
   void addProductSet(ProductSet set) {
     _productSets.add(set);
     notifyListeners();
@@ -475,7 +482,6 @@ class NutritionProvider extends ChangeNotifier {
       await prefs.setString('nutrition_meals', jsonEncode(mealsMap));
 
       await prefs.setString('nutrition_cart', jsonEncode(_cart.map((p) => p.toJson()).toList()));
-      await prefs.setStringList('nutrition_ingredients', _ingredients);
       await prefs.setStringList('nutrition_ingredients', _ingredients);
       await prefs.setString('nutrition_shopping_list', jsonEncode(_shoppingList.map((item) => item.toJson()).toList()));
       await prefs.setString('nutrition_user_products', jsonEncode(_userProducts.map((p) => p.toJson()).toList()));

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../core/models/note.dart';
 import '../../core/providers/notes_provider.dart';
+import '../../core/providers/user_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../widgets/minimal_card.dart';
 import 'edit_note_screen.dart';
 
 class NotesScreen extends StatefulWidget {
@@ -15,106 +18,167 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   bool _sortByModified = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+  bool _isSearching = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppTheme.primaryDark,
       body: Stack(
+        fit: StackFit.expand,
         children: [
-           // Background
-           Positioned.fill(
-            child: Image.asset(
-              'assets/images/home_bg_dark.png',
-              fit: BoxFit.cover,
+          Positioned.fill(
+            child: Consumer<UserProvider>(
+              builder: (context, user, _) =>
+                  Image.asset(user.wallpaperPath, fit: BoxFit.cover),
             ),
+          ),
+          Positioned.fill(
+            child: Container(color: Colors.black.withValues(alpha: 0.2)),
           ),
           SafeArea(
             child: Column(
               children: [
                 // Header
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Заметки',
-                            style: AppTheme.headlineStyle.copyWith(fontSize: 28),
-                          ),
-                        ],
-                      ),
-                      Theme(
-                        data: Theme.of(context).copyWith(
-                          popupMenuTheme: PopupMenuThemeData(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            color: Colors.white.withValues(alpha: 0.1),
-                          ),
+                      if (!_isSearching) ...[ 
+                        const SizedBox(width: 12),
+                        Text('Заметки', style: AppTheme.headlineStyle),
+                        const Spacer(),
+                        // Search toggle
+                        IconButton(
+                          icon: const Icon(Icons.search_rounded, color: AppTheme.white70),
+                          onPressed: () => setState(() => _isSearching = true),
                         ),
-                        child: PopupMenuButton<bool>(
-                          icon: const Icon(Icons.sort, color: Colors.white),
-                          offset: const Offset(0, 50),
-                          elevation: 0,
+                        // Sort
+                        PopupMenuButton<bool>(
+                          icon: const Icon(Icons.sort_rounded, color: AppTheme.white70),
+                          color: const Color(0xFF1A1A2E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 8,
                           onSelected: (bool sortByModified) {
-                            setState(() {
-                              _sortByModified = sortByModified;
-                            });
+                            setState(() => _sortByModified = sortByModified);
                             context.read<NotesProvider>().sortNotes(byDateModified: sortByModified);
                           },
                           itemBuilder: (context) => [
                             PopupMenuItem(
                               value: false,
-                              child: Text('По дате создания', style: TextStyle(color: Colors.white)),
+                              child: Row(children: [
+                                Icon(Icons.calendar_today_rounded, size: 16, color: _sortByModified ? AppTheme.white38 : AppTheme.accentIndigo),
+                                const SizedBox(width: 10),
+                                Text('По дате создания', style: AppTheme.bodyStyle.copyWith(color: _sortByModified ? AppTheme.white38 : AppTheme.white)),
+                              ]),
                             ),
                             PopupMenuItem(
                               value: true,
-                              child: Text('По дате изменения', style: TextStyle(color: Colors.white)),
+                              child: Row(children: [
+                                Icon(Icons.edit_calendar_rounded, size: 16, color: _sortByModified ? AppTheme.accentIndigo : AppTheme.white38),
+                                const SizedBox(width: 10),
+                                Text('По дате изменения', style: AppTheme.bodyStyle.copyWith(color: _sortByModified ? AppTheme.white : AppTheme.white38)),
+                              ]),
                             ),
                           ],
                         ),
-                      ),
+                      ] else ...[
+                        // Search mode
+                        Expanded(
+                          child: Container(
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: AppTheme.white08,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: TextField(
+                              controller: _searchCtrl,
+                              autofocus: true,
+                              style: AppTheme.bodyStyle.copyWith(color: AppTheme.white, fontSize: 15),
+                              decoration: InputDecoration(
+                                hintText: 'Поиск заметок...',
+                                hintStyle: AppTheme.captionStyle.copyWith(fontSize: 14),
+                                prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.white38, size: 20),
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onChanged: (v) => setState(() => _query = v.toLowerCase()),
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _isSearching = false;
+                              _query = '';
+                              _searchCtrl.clear();
+                            });
+                          },
+                          child: Text('Отмена', style: AppTheme.captionStyle.copyWith(color: AppTheme.accentIndigo)),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                
+
                 // List
                 Expanded(
                   child: Consumer<NotesProvider>(
-                    builder: (context, provider, child) {
+                    builder: (context, provider, _) {
                       if (provider.isLoading) {
-                        return const Center(child: CircularProgressIndicator(color: Colors.amber));
+                        return const Center(child: CircularProgressIndicator(color: AppTheme.accentIndigo, strokeWidth: 2));
                       }
-                      
-                      if (provider.notes.isEmpty) {
+
+                      var notes = provider.notes;
+                      if (_query.isNotEmpty) {
+                        notes = notes.where((n) =>
+                          n.title.toLowerCase().contains(_query) ||
+                          n.content.toLowerCase().contains(_query)
+                        ).toList();
+                      }
+
+                      if (notes.isEmpty) {
                         return Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.edit_note, size: 80, color: Colors.white.withOpacity(0.2)),
+                              Icon(
+                                _query.isNotEmpty ? Icons.search_off_rounded : Icons.edit_note_rounded,
+                                size: 72, color: AppTheme.white12,
+                              ),
                               const SizedBox(height: 16),
                               Text(
-                                'Нет заметок',
-                                style: AppTheme.bodyStyle.copyWith(color: Colors.white54),
+                                _query.isNotEmpty ? 'Ничего не найдено' : 'Нет заметок',
+                                style: AppTheme.bodyStyle.copyWith(color: AppTheme.white38),
                               ),
+                              if (_query.isEmpty) ...[ 
+                                const SizedBox(height: 8),
+                                Text('Нажмите + чтобы добавить', style: AppTheme.captionStyle),
+                              ],
                             ],
                           ),
                         );
                       }
-            
+
                       return ListView.builder(
-                        padding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 100),
-                        itemCount: provider.notes.length,
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
+                        itemCount: notes.length,
                         physics: const BouncingScrollPhysics(),
                         itemBuilder: (context, index) {
-                          final note = provider.notes[index];
-                          return _buildNoteCard(context, note);
+                          return _NoteCard(
+                            note: notes[index],
+                            sortByModified: _sortByModified,
+                            index: index,
+                            searchQuery: _query,
+                          );
                         },
                       );
                     },
@@ -126,79 +190,136 @@ class _NotesScreenState extends State<NotesScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.amber,
-        child: const Icon(Icons.add, color: Colors.black),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const EditNoteScreen()),
-          );
-        },
+        backgroundColor: AppTheme.accentIndigo,
+        elevation: 0,
+        shape: const CircleBorder(),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EditNoteScreen()),
+        ),
+        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
       ),
     );
   }
+}
 
-  Widget _buildNoteCard(BuildContext context, Note note) {
-    final date = _sortByModified ? note.updatedAt : note.createdAt;
-    final dateStr = DateFormat('dd MMM HH:mm', 'ru').format(date);
-    
-    // Preview content logic
+class _NoteCard extends StatelessWidget {
+  final Note note;
+  final bool sortByModified;
+  final int index;
+  final String searchQuery;
+
+  const _NoteCard({
+    required this.note,
+    required this.sortByModified,
+    required this.index,
+    this.searchQuery = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final date = sortByModified ? note.updatedAt : note.createdAt;
+    final dateStr = DateFormat('d MMM · HH:mm', 'ru').format(date);
+
     String preview = note.content;
     if (preview.isEmpty && note.todoItems != null && note.todoItems!.isNotEmpty) {
-       final done = note.todoItems!.where((i) => i.isDone).length;
-       preview = '${done}/${note.todoItems!.length} выполнено';
+      final done = note.todoItems!.where((i) => i.isDone).length;
+      preview = '$done / ${note.todoItems!.length} выполнено';
     }
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => EditNoteScreen(note: note)),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    note.title,
-                    style: AppTheme.titleStyle.copyWith(color: Colors.white, fontSize: 18),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+    return MinimalCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(18),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => EditNoteScreen(note: note)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _HighlightText(
+                  text: note.title,
+                  query: searchQuery,
+                  style: AppTheme.titleStyle.copyWith(fontSize: 16),
+                  maxLines: 1,
                 ),
-                if (note.reminderDateTime != null)
-                   Icon(Icons.alarm, size: 16, color: Colors.amber.withValues(alpha: 0.8)),
-              ],
-            ),
-            if (preview.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                preview,
-                style: AppTheme.bodyStyle.copyWith(color: Colors.white70, fontSize: 14),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
+              if (note.reminderDateTime != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.alarm_rounded, size: 15, color: AppTheme.accentGold.withValues(alpha: 0.8)),
+                ),
             ],
-            const SizedBox(height: 12),
-            Text(
-              dateStr,
-              style: TextStyle(color: Colors.white30, fontSize: 12),
+          ),
+          if (preview.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _HighlightText(
+              text: preview,
+              query: searchQuery,
+              style: AppTheme.bodyStyle.copyWith(fontSize: 13, height: 1.4),
+              maxLines: 2,
             ),
           ],
-        ),
+          const SizedBox(height: 14),
+          Text(dateStr, style: AppTheme.captionStyle.copyWith(fontSize: 11)),
+        ],
       ),
+    ).animate().fadeIn(duration: 300.ms, delay: (index * 40).ms).slideY(begin: 0.04, end: 0);
+  }
+}
+
+// Highlights matching query text
+class _HighlightText extends StatelessWidget {
+  final String text;
+  final String query;
+  final TextStyle style;
+  final int maxLines;
+
+  const _HighlightText({
+    required this.text,
+    required this.query,
+    required this.style,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (query.isEmpty) {
+      return Text(text, style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+    }
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    int start = 0;
+
+    while (true) {
+      final idx = lowerText.indexOf(lowerQuery, start);
+      if (idx == -1) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+      if (idx > start) {
+        spans.add(TextSpan(text: text.substring(start, idx)));
+      }
+      spans.add(TextSpan(
+        text: text.substring(idx, idx + query.length),
+        style: TextStyle(
+          backgroundColor: AppTheme.accentGold.withValues(alpha: 0.3),
+          color: AppTheme.white,
+          fontWeight: FontWeight.w600,
+        ),
+      ));
+      start = idx + query.length;
+    }
+
+    return Text.rich(
+      TextSpan(children: spans, style: style),
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

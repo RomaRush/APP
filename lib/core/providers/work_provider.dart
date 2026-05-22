@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WorkProvider extends ChangeNotifier {
+  Timer? _ticker;
   // Current month and year
   DateTime _currentMonth = DateTime.now();
   
@@ -15,42 +18,52 @@ class WorkProvider extends ChangeNotifier {
   // Hourly rate
   double _hourlyRate = 180.0;
   
+  // Rate type (hourly or per shift)
+  bool _isHourlyRate = true;
+  double _shiftRate = 1500.0;
+  
   // Standard hours per work day
   double _hoursPerDay = 8.0;
-  
-  // Weekend plans
-  List<String> _weekendPlans = [];
 
-  // Flow & Earn (Timer)
+  // === TIMER STATE FIELDS ===
   bool _isTimerRunning = false;
+  double _sessionSeconds = 0.0;
   DateTime? _timerStartTime;
-  double _sessionSeconds = 0;
-  
-  // Pomodoro Logic
+  DateTime? _lastTickTime;
+  String _workMode = 'standard';
   TimerMode _timerMode = TimerMode.standard;
   PomodoroState _pomodoroState = PomodoroState.work;
-  int _pomodoroSecondsLeft = 25 * 60; // Default 25 min
+  int _pomodoroSecondsLeft = 25 * 60;
   int _pomodoroWorkDuration = 25 * 60;
   int _pomodoroShortBreak = 5 * 60;
   int _pomodoroLongBreak = 15 * 60;
   int _pomodoroCycles = 0;
-  
-  // Work Mode for Synergy
-  String _workMode = 'Normal'; // Normal, Light, Deep
-  
+
+  // Countdown mode
+  int _countdownSecondsLeft = 600; // default 10 min
+  int _countdownTotalDuration = 600;
+
   // Getters
   DateTime get currentMonth => _currentMonth;
   double get hourlyRate => _hourlyRate;
+  bool get isHourlyRate => _isHourlyRate;
+  double get shiftRate => _shiftRate;
   double get hoursPerDay => _hoursPerDay;
-  List<String> get weekendPlans => _weekendPlans;
   bool get isTimerRunning => _isTimerRunning;
-  double get currentSessionEarnings => (_sessionSeconds / 3600) * _hourlyRate;
+  double get currentSessionEarnings => (_sessionSeconds / 3600) * _hourlyRate; // Consider shift mode later if needed
   double get currentSessionDuration => _sessionSeconds;
   String get workMode => _workMode;
-  
+
+  bool get isBreak => _timerMode == TimerMode.pomodoro && 
+      (_pomodoroState == PomodoroState.shortBreak || _pomodoroState == PomodoroState.longBreak);
+
+  double get timerSeconds => _sessionSeconds;
+
   TimerMode get timerMode => _timerMode;
   PomodoroState get pomodoroState => _pomodoroState;
   int get pomodoroSecondsLeft => _pomodoroSecondsLeft;
+  int get countdownSecondsLeft => _countdownSecondsLeft;
+  int get countdownTotalDuration => _countdownTotalDuration;
   int get pomodoroTotalDuration => _getPomodoroTotalDuration();
   
   int _getPomodoroTotalDuration() {
@@ -105,7 +118,11 @@ class WorkProvider extends ChangeNotifier {
   }
   
   double get totalEarned {
-    return totalHoursThisMonth * _hourlyRate;
+    if (_isHourlyRate) {
+      return totalHoursThisMonth * _hourlyRate;
+    } else {
+      return totalDaysWorked * _shiftRate;
+    }
   }
   
   // Initialize
@@ -119,9 +136,11 @@ class WorkProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Load hourly rate
+      // Load hourly rate and settings
       _hourlyRate = prefs.getDouble('work_hourly_rate') ?? 180.0;
       _hoursPerDay = prefs.getDouble('work_hours_per_day') ?? 8.0;
+      _isHourlyRate = prefs.getBool('work_is_hourly_rate') ?? true;
+      _shiftRate = prefs.getDouble('work_shift_rate') ?? 1500.0;
       
       // Load worked days
       final workedDaysJson = prefs.getString('work_worked_days');
@@ -137,12 +156,6 @@ class WorkProvider extends ChangeNotifier {
         _dayComments = decoded.map((k, v) => MapEntry(k, v.toString()));
       }
       
-      // Load weekend plans
-      final plansJson = prefs.getStringList('work_weekend_plans');
-      if (plansJson != null) {
-        _weekendPlans = plansJson;
-      }
-      
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading work data: $e');
@@ -156,9 +169,10 @@ class WorkProvider extends ChangeNotifier {
       
       await prefs.setDouble('work_hourly_rate', _hourlyRate);
       await prefs.setDouble('work_hours_per_day', _hoursPerDay);
+      await prefs.setBool('work_is_hourly_rate', _isHourlyRate);
+      await prefs.setDouble('work_shift_rate', _shiftRate);
       await prefs.setString('work_worked_days', jsonEncode(_workedDays));
       await prefs.setString('work_comments', jsonEncode(_dayComments));
-      await prefs.setStringList('work_weekend_plans', _weekendPlans);
     } catch (e) {
       debugPrint('Error saving work data: $e');
     }
@@ -207,6 +221,18 @@ class WorkProvider extends ChangeNotifier {
     notifyListeners();
   }
   
+  void setShiftRate(double rate) {
+    _shiftRate = rate;
+    _saveData();
+    notifyListeners();
+  }
+  
+  void setRateType(bool isHourly) {
+    _isHourlyRate = isHourly;
+    _saveData();
+    notifyListeners();
+  }
+  
   // Update hours per day
   void setHoursPerDay(double hours) {
     _hoursPerDay = hours;
@@ -223,21 +249,6 @@ class WorkProvider extends ChangeNotifier {
   void previousMonth() {
     _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1, 1);
     notifyListeners();
-  }
-  
-  // Weekend plans
-  void addWeekendPlan(String plan) {
-    _weekendPlans.add(plan);
-    _saveData();
-    notifyListeners();
-  }
-  
-  void removeWeekendPlan(int index) {
-    if (index >= 0 && index < _weekendPlans.length) {
-      _weekendPlans.removeAt(index);
-      _saveData();
-      notifyListeners();
-    }
   }
   
   // Get days in current month
@@ -268,6 +279,19 @@ class WorkProvider extends ChangeNotifier {
     if (_isTimerRunning) return;
     _isTimerRunning = true;
     _timerStartTime = DateTime.now();
+    _lastTickTime = DateTime.now();
+    
+    // Start internal ticker
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      tickTimer();
+    });
+    
+    // Schedule notification for Pomodoro
+    if (_timerMode == TimerMode.pomodoro) {
+       _schedulePomodoroNotification();
+    }
+    
     notifyListeners();
   }
 
@@ -275,27 +299,83 @@ class WorkProvider extends ChangeNotifier {
     if (!_isTimerRunning) return;
     _isTimerRunning = false;
     _timerStartTime = null;
+    _lastTickTime = null;
+    _ticker?.cancel();
     
-    // Timer earnings are for display only, not added to work schedule
+    // Cancel any scheduled pomodoro notifications
+    NotificationService().cancelNotification(1001);
+    
+    // Reset session seconds when stopping completely
     _sessionSeconds = 0;
+    notifyListeners();
+  }
+
+  void pauseTimer() {
+    if (!_isTimerRunning) return;
+    _isTimerRunning = false;
+    _ticker?.cancel();
+    // Keep _sessionSeconds and timerStartTime for resume functionality
+    notifyListeners();
+  }
+
+  void resumeTimer() {
+    if (_isTimerRunning) return;
+    if (_timerStartTime == null) return;
+    
+    _isTimerRunning = true;
+    _lastTickTime = DateTime.now();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      tickTimer();
+    });
     notifyListeners();
   }
 
   void tickTimer() {
     if (_isTimerRunning) {
+      final now = DateTime.now();
+      final delta = _lastTickTime != null ? now.difference(_lastTickTime!).inMilliseconds / 1000.0 : 0.0;
+      _lastTickTime = now;
+
       if (_timerMode == TimerMode.standard) {
-        _sessionSeconds += 1;
-      } else {
+        _sessionSeconds += delta;
+      } else if (_timerMode == TimerMode.pomodoro) {
         // Pomodoro Countdown
         if (_pomodoroSecondsLeft > 0) {
-          _pomodoroSecondsLeft -= 1;
-        } else {
+          // Subtract exactly the time passed to be accurate after background return
+          _pomodoroSecondsLeft -= delta.round();
+          if (_pomodoroSecondsLeft < 0) _pomodoroSecondsLeft = 0;
+        } 
+        
+        if (_pomodoroSecondsLeft <= 0) {
           // Timer finished
           _handlePomodoroFinish();
+        }
+      } else if (_timerMode == TimerMode.countdown) {
+        if (_countdownSecondsLeft > 0) {
+          _countdownSecondsLeft -= delta.round();
+          if (_countdownSecondsLeft < 0) _countdownSecondsLeft = 0;
+        }
+        if (_countdownSecondsLeft <= 0) {
+          _isTimerRunning = false;
+          _ticker?.cancel();
+          // Optionally notify
         }
       }
       notifyListeners();
     }
+  }
+
+  void _schedulePomodoroNotification() {
+    final finishTime = DateTime.now().add(Duration(seconds: _pomodoroSecondsLeft));
+    final title = _pomodoroState == PomodoroState.work ? "Время работать вышло!" : "Перерыв окончен!";
+    final body = _pomodoroState == PomodoroState.work ? "Пора немного отдохнуть." : "Пора возвращаться к делам.";
+    
+    NotificationService().scheduleNotification(
+      id: 1001,
+      title: title,
+      body: body,
+      scheduledDate: finishTime,
+    );
   }
   
   void _handlePomodoroFinish() {
@@ -331,6 +411,28 @@ class WorkProvider extends ChangeNotifier {
     if (mode == TimerMode.pomodoro) {
       _pomodoroState = PomodoroState.work;
       _pomodoroSecondsLeft = _pomodoroWorkDuration;
+    } else if (mode == TimerMode.countdown) {
+      _countdownSecondsLeft = _countdownTotalDuration;
+    }
+    notifyListeners();
+  }
+
+  void setCountdownDuration(int seconds) {
+    _countdownTotalDuration = seconds;
+    _countdownSecondsLeft = seconds;
+    notifyListeners();
+  }
+
+  void resetTimer() {
+    _isTimerRunning = false;
+    _ticker?.cancel();
+    if (_timerMode == TimerMode.standard) {
+      _sessionSeconds = 0;
+    } else if (_timerMode == TimerMode.pomodoro) {
+      _pomodoroState = PomodoroState.work;
+      _pomodoroSecondsLeft = _pomodoroWorkDuration;
+    } else if (_timerMode == TimerMode.countdown) {
+      _countdownSecondsLeft = _countdownTotalDuration;
     }
     notifyListeners();
   }
@@ -344,7 +446,26 @@ class WorkProvider extends ChangeNotifier {
     _workMode = mode;
     notifyListeners();
   }
+
+  void toggleTimer() {
+    if (_isTimerRunning) {
+      pauseTimer();
+    } else if (_sessionSeconds > 0) {
+      resumeTimer();
+    } else {
+      startTimer();
+    }
+  }
+
+
+  int get firstDayOffset => firstWeekday - 1;
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 }
 
-enum TimerMode { standard, pomodoro }
+enum TimerMode { standard, pomodoro, countdown }
 enum PomodoroState { work, shortBreak, longBreak }

@@ -1,11 +1,9 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_service.dart';
 import '../models/story_entry.dart';
-import '../l10n/app_localizations.dart';
 
 
 class Achievement {
@@ -41,6 +39,19 @@ class UserProvider extends ChangeNotifier {
   String _name = 'RomaRush';
   String _subtitle = 'Владелец приложения DAYLO';
   String? _avatarPath;
+  String _wallpaperPath = 'assets/images/home_bg_dark.png';
+  int _userPoints = 0;
+  
+  // Daily checklist: task_id -> isCompleted
+  final Map<String, bool> _dailyTasks = {
+    'note': false,
+    'calories': false,
+    'water': false,
+    'mood': false,
+    'breathing': false,
+  };
+  
+  DateTime _lastDailyReset = DateTime.now();
 
 
   // Stats
@@ -48,7 +59,6 @@ class UserProvider extends ChangeNotifier {
   
   Locale _appLocale = const Locale('ru');
   bool _notificationsEnabled = true;
-  Timer? _notificationTimer;
 
   Locale get appLocale => _appLocale;
   bool get notificationsEnabled => _notificationsEnabled;
@@ -58,7 +68,6 @@ class UserProvider extends ChangeNotifier {
   // I will init at 0.
   
   int _friendsCount = 0;
-  int _achievementsCount = 0;
   
   // Store actual content?
   List<StoryEntry> _storyImages = [];
@@ -172,6 +181,7 @@ class UserProvider extends ChangeNotifier {
   String get name => _name;
   String get subtitle => _subtitle;
   String? get avatarPath => _avatarPath;
+  String get wallpaperPath => _wallpaperPath;
   
   int get storyDaysCount => _storyImages.length; // Dynamic based on images? Or separate counter?
   // Prompt says "increases as user adds". If I link it to the list length, it's easier.
@@ -182,6 +192,8 @@ class UserProvider extends ChangeNotifier {
   int get achievementsCount => _achievements.where((a) => a.isUnlocked).length;
   List<Achievement> get achievements => _achievements;
   List<StoryEntry> get storyImages => _storyImages;
+  int get userPoints => _userPoints;
+  Map<String, bool> get dailyTasks => _dailyTasks;
 
   UserProvider() {
     _loadData();
@@ -197,6 +209,7 @@ class UserProvider extends ChangeNotifier {
       
       _storyDaysCount = prefs.getInt('user_story_days') ?? 0;
       _friendsCount = prefs.getInt('user_friends_count') ?? 0;
+      _wallpaperPath = prefs.getString('user_wallpaper_path') ?? 'assets/images/home_bg_dark.png';
       
       final localeCode = prefs.getString('user_locale');
       if (localeCode != null) {
@@ -204,6 +217,20 @@ class UserProvider extends ChangeNotifier {
       }
       
       _notificationsEnabled = prefs.getBool('user_notifications_enabled') ?? true;
+      _userPoints = prefs.getInt('user_points') ?? 0;
+      
+      final lastResetStr = prefs.getString('user_last_reset');
+      if (lastResetStr != null) {
+        _lastDailyReset = DateTime.parse(lastResetStr);
+        _checkDailyReset();
+      }
+      
+      final completedTasks = prefs.getStringList('user_completed_daily_tasks') ?? [];
+      for (var taskKey in completedTasks) {
+        if (_dailyTasks.containsKey(taskKey)) {
+          _dailyTasks[taskKey] = true;
+        }
+      }
       
       final unlockedIds = prefs.getStringList('user_unlocked_achievements') ?? [];
       for (var id in unlockedIds) {
@@ -213,6 +240,7 @@ class UserProvider extends ChangeNotifier {
          }
       }
       
+      _checkDailyReset();
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading user data: $e');
@@ -225,11 +253,12 @@ class UserProvider extends ChangeNotifier {
       
       await prefs.setString('user_name', _name);
       await prefs.setString('user_subtitle', _subtitle);
-      if (_avatarPath != null) await prefs.setString('user_avatar_path', _avatarPath!);
-      
+      if (_avatarPath != null) {
+        await prefs.setString('user_avatar_path', _avatarPath!);
+      }
       await prefs.setInt('user_story_days', _storyDaysCount);
       await prefs.setInt('user_friends_count', _friendsCount);
-      
+      await prefs.setString('user_wallpaper_path', _wallpaperPath);
       await prefs.setString('user_locale', _appLocale.languageCode);
       await prefs.setBool('user_notifications_enabled', _notificationsEnabled);
       
@@ -238,6 +267,11 @@ class UserProvider extends ChangeNotifier {
           .map((a) => a.id)
           .toList();
       await prefs.setStringList('user_unlocked_achievements', unlockedIds);
+      
+      await prefs.setInt('user_points', _userPoints);
+      await prefs.setString('user_last_reset', _lastDailyReset.toIso8601String());
+      await prefs.setStringList('user_completed_daily_tasks', 
+          _dailyTasks.entries.where((e) => e.value).map((e) => e.key).toList());
       
     } catch (e) {
       debugPrint('Error saving user data: $e');
@@ -257,6 +291,12 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setWallpaper(String path) {
+    _wallpaperPath = path;
+    _saveData();
+    notifyListeners();
+  }
+
   void changeLanguage(Locale locale) {
     if (_appLocale == locale) return;
     _appLocale = locale;
@@ -266,7 +306,7 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> toggleNotifications(bool value) async {
     _notificationsEnabled = value;
-    _saveData();
+    await _saveData();
     notifyListeners();
 
     if (value) {
@@ -274,6 +314,12 @@ class UserProvider extends ChangeNotifier {
       await service.init();
       await service.requestPermissions();
     }
+  }
+
+  Future<void> setAppLocale(String langCode) async {
+    _appLocale = Locale(langCode);
+    await _saveData();
+    notifyListeners();
   }
 
   void addStoryImage(File image) {
@@ -308,6 +354,30 @@ class UserProvider extends ChangeNotifier {
     final index = _achievements.indexWhere((a) => a.id == id);
     if (index != -1 && !_achievements[index].isUnlocked) {
       _achievements[index] = _achievements[index].copyWith(isUnlocked: true);
+      _saveData();
+      notifyListeners();
+    }
+  }
+
+  void completeDailyTask(String taskKey) {
+    _checkDailyReset();
+    if (_dailyTasks.containsKey(taskKey) && !_dailyTasks[taskKey]!) {
+      _dailyTasks[taskKey] = true;
+      // Random points between 50 and 100
+      final points = 50 + (DateTime.now().millisecond % 51); 
+      _userPoints += points;
+      _saveData();
+      notifyListeners();
+    }
+  }
+
+  void _checkDailyReset() {
+    final now = DateTime.now();
+    if (now.year != _lastDailyReset.year || 
+        now.month != _lastDailyReset.month || 
+        now.day != _lastDailyReset.day) {
+      _dailyTasks.updateAll((key, value) => false);
+      _lastDailyReset = now;
       _saveData();
       notifyListeners();
     }

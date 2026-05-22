@@ -1,7 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
-import '../core/theme/app_theme.dart';
 
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
@@ -156,10 +154,6 @@ class _SpringNavItem extends StatefulWidget {
 
 class _SpringNavItemState extends State<_SpringNavItem> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  
-  // Spring simulation for organic feel
-  late SpringSimulation _springSimulation;
 
   @override
   void initState() {
@@ -168,12 +162,6 @@ class _SpringNavItemState extends State<_SpringNavItem> with SingleTickerProvide
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-
-    // Spring definition: mass=1, stiffness=180, damping=12
-    const spring = SpringDescription(mass: 1, stiffness: 180, damping: 12);
-    _springSimulation = SpringSimulation(spring, 0, 1, 0);
-
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.0).animate(_controller);
   }
 
   @override

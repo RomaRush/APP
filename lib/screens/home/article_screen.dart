@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_theme.dart';
 
 enum ArticleContentType { text, image, recipeStep }
 
 class ArticleBlock {
   final ArticleContentType type;
-  final String content; // Text or Image path
-  final String? title; // For steps or headers
+  final String content; 
+  final String? title; 
 
   ArticleBlock({
     required this.type,
@@ -30,70 +31,67 @@ class ArticleScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.white,
+      backgroundColor: AppTheme.primaryDark,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           SliverAppBar(
-            expandedHeight: 320,
+            expandedHeight: 340,
             pinned: true,
-            backgroundColor: AppTheme.darkGray,
+            stretch: true,
+            backgroundColor: AppTheme.primaryDark,
+            elevation: 0,
             leading: Padding(
               padding: const EdgeInsets.all(8.0),
-              child: CircleAvatar(
-                backgroundColor: Colors.black.withValues(alpha: 0.5),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
             flexibleSpace: FlexibleSpaceBar(
-              background: Image.asset(
-                headerImage,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
+              stretchModes: const [StretchMode.zoomBackground, StretchMode.blurBackground],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    headerImage,
+                    fit: BoxFit.cover,
+                  ),
+                  Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0)], // Purple Gradient
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          AppTheme.primaryDark,
+                        ],
+                        stops: [0.6, 1.0],
                       ),
                     ),
-                    child: const Center(
-                      child: Icon(Icons.article, color: Colors.white54, size: 64),
-                    ),
-                  );
-                },
+                  ),
+                ],
               ),
             ),
           ),
           SliverToBoxAdapter(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              decoration: const BoxDecoration(
-                color: AppTheme.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(32),
-                  topRight: Radius.circular(32),
-                ),
-              ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
                     style: AppTheme.headlineStyle.copyWith(
-                      color: AppTheme.black,
                       fontSize: 32,
                       fontWeight: FontWeight.w800,
                       height: 1.1,
+                      letterSpacing: -1,
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                  ...blocks.map((block) => _buildBlock(block)),
-                  const SizedBox(height: 60),
+                  ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.1, end: 0),
+                  const SizedBox(height: 32),
+                  ...blocks.asMap().entries.map((entry) => _buildBlock(entry.value, entry.key)),
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
@@ -103,52 +101,43 @@ class ArticleScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBlock(ArticleBlock block) {
+  Widget _buildBlock(ArticleBlock block, int index) {
+    Widget content;
     switch (block.type) {
       case ArticleContentType.text:
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 20),
+        content = Padding(
+          padding: const EdgeInsets.only(bottom: 24),
           child: Text(
             block.content,
             style: AppTheme.bodyStyle.copyWith(
-              color: AppTheme.darkGray,
-              fontSize: 18,
-              height: 1.6,
-              fontWeight: FontWeight.w400,
+              color: AppTheme.white70,
+              fontSize: 16,
+              height: 1.7,
             ),
           ),
         );
+        break;
       case ArticleContentType.image:
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
+        content = Padding(
+          padding: const EdgeInsets.only(bottom: 32),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             child: Image.asset(
               block.content,
               fit: BoxFit.cover,
               width: double.infinity,
-              errorBuilder: (context, error, stackTrace) {
-                 return Container(
-                   height: 200,
-                   decoration: BoxDecoration(
-                     color: Colors.grey[200],
-                     borderRadius: BorderRadius.circular(20),
-                   ),
-                   child: const Center(
-                     child: Icon(Icons.image_not_supported, color: Colors.grey),
-                   ),
-                 );
-              },
             ),
           ),
         );
+        break;
       case ArticleContentType.recipeStep:
-        return Container(
-          margin: const EdgeInsets.only(bottom: 24),
-          padding: const EdgeInsets.all(20),
+        content = Container(
+          margin: const EdgeInsets.only(bottom: 32),
+          padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: AppTheme.lightGray,
-            borderRadius: BorderRadius.circular(20),
+            color: AppTheme.white05,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppTheme.white08),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -156,24 +145,27 @@ class ArticleScreen extends StatelessWidget {
               if (block.title != null)
                 Text(
                   block.title!,
-                  style: AppTheme.headlineStyle.copyWith(
-                    color: AppTheme.black,
-                    fontSize: 20,
+                  style: AppTheme.titleStyle.copyWith(
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    color: AppTheme.white,
                   ),
                 ),
               if (block.title != null) const SizedBox(height: 12),
               Text(
                 block.content,
                 style: AppTheme.bodyStyle.copyWith(
-                  color: AppTheme.darkGray,
-                  fontSize: 16,
-                  height: 1.5,
+                  color: AppTheme.white70,
+                  fontSize: 15,
+                  height: 1.6,
                 ),
               ),
             ],
           ),
         );
+        break;
     }
+    
+    return content.animate().fadeIn(duration: 600.ms, delay: (index * 100).ms).slideY(begin: 0.05, end: 0);
   }
 }

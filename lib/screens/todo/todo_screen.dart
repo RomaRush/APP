@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/providers/todo_provider.dart';
+import '../../core/providers/user_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../widgets/premium_dialog.dart';
 
 class TodoScreen extends StatefulWidget {
   const TodoScreen({super.key});
@@ -82,7 +84,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                       hintText: 'Название задачи',
                       hintStyle: TextStyle(color: Colors.grey[500]),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -100,7 +102,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                       hintText: 'Описание (опционально)',
                       hintStyle: TextStyle(color: Colors.grey[500]),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -141,8 +143,8 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
                           color: selectedCategory == cat 
-                            ? Colors.amber.withOpacity(0.3)
-                            : Colors.white.withOpacity(0.08),
+                            ? Colors.amber.withValues(alpha: 0.3)
+                            : Colors.white.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(20),
                           border: selectedCategory == cat 
                             ? Border.all(color: Colors.amber, width: 1)
@@ -181,12 +183,12 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.calendar_today, color: Colors.amber.withOpacity(0.8), size: 20),
+                          Icon(Icons.calendar_today, color: Colors.amber.withValues(alpha: 0.8), size: 20),
                           const SizedBox(width: 12),
                           Text(
                             selectedDate != null 
@@ -247,7 +249,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.25) : Colors.white.withOpacity(0.08),
+          color: isSelected ? color.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: isSelected ? color : Colors.transparent, width: 1.5),
         ),
@@ -264,9 +266,13 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
         children: [
           // Background - same as notes
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/home_bg_dark.png',
-              fit: BoxFit.cover,
+            child: Consumer<UserProvider>(
+              builder: (context, user, _) {
+                return Image.asset(
+                  user.wallpaperPath,
+                  fit: BoxFit.cover,
+                );
+              }
             ),
           ),
           SafeArea(
@@ -327,24 +333,37 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                 // Progress Bar
                 Consumer<TodoProvider>(
                   builder: (context, todo, _) {
+                    final progress = todo.totalTodos > 0 ? todo.completedTodos / todo.totalTodos : 0.0;
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Container(
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: todo.totalTodos > 0 ? todo.completedTodos / todo.totalTodos : 0,
-                          child: Container(
+                      child: Stack(
+                        children: [
+                          Container(
+                            height: 6,
+                            width: double.infinity,
                             decoration: BoxDecoration(
-                              color: Colors.amber,
+                              color: Colors.white.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(3),
                             ),
                           ),
-                        ),
+                          AnimatedContainer(
+                            duration: 500.ms,
+                            curve: Curves.easeOutCubic,
+                            height: 6,
+                            width: (MediaQuery.of(context).size.width - 40) * progress,
+                            decoration: BoxDecoration(
+                              color: Colors.amber,
+                              borderRadius: BorderRadius.circular(3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.amber.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -378,7 +397,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.check_circle_outline, size: 80, color: Colors.white.withOpacity(0.2)),
+                              Icon(Icons.check_circle_outline, size: 80, color: Colors.white.withValues(alpha: 0.2)),
                               const SizedBox(height: 16),
                               Text(
                                 todo.totalTodos == 0 
@@ -397,46 +416,50 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                         itemCount: todo.filteredTodos.length,
                         itemBuilder: (context, index) {
                           final item = todo.filteredTodos[index];
-                          return _buildTodoCard(item, todo);
+                          return _buildTodoCard(item, todo)
+                              .animate()
+                              .fadeIn(duration: 350.ms, delay: (index * 40).ms)
+                              .slideY(begin: 0.1, end: 0, curve: Curves.easeOutCubic);
                         },
                       );
                     },
                   ),
                 ),
               ],
-            ),
+            ).animate().fadeIn(duration: 500.ms),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.amber,
-        child: const Icon(Icons.add, color: Colors.black),
         onPressed: _showAddTodoSheet,
-      ),
+        child: const Icon(Icons.add, color: Colors.black),
+      ).animate().scale(delay: 600.ms, duration: 400.ms, curve: Curves.elasticOut),
     );
   }
 
   void _showClearDialog(BuildContext context, TodoProvider todo) {
-    showDialog(
+    showPremiumDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.grey.shade900,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Удалить выполненные?', style: AppTheme.titleStyle.copyWith(color: Colors.white)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Отмена', style: TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () {
-              todo.clearCompleted();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
+      title: 'Очистить?',
+      content: const Text(
+        'Удалить все выполненные задачи?',
+        style: TextStyle(color: AppTheme.white70),
+        textAlign: TextAlign.center,
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Отмена', style: AppTheme.bodyStyle.copyWith(color: AppTheme.white38)),
+        ),
+        TextButton(
+          onPressed: () {
+            todo.clearCompleted();
+            Navigator.pop(context);
+          },
+          child: const Text('Удалить', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        ),
+      ],
     );
   }
 
@@ -448,7 +471,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.amber.withOpacity(0.25) : Colors.white.withOpacity(0.08),
+          color: isSelected ? Colors.amber.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(20),
           border: isSelected ? Border.all(color: Colors.amber, width: 1) : null,
         ),
@@ -506,8 +529,8 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: item.isCompleted 
-                      ? Colors.green.withOpacity(0.2)
-                      : priorityColor.withOpacity(0.1),
+                      ? Colors.green.withValues(alpha: 0.2)
+                      : priorityColor.withValues(alpha: 0.1),
                     border: Border.all(
                       color: item.isCompleted ? Colors.green : priorityColor,
                       width: 2,
@@ -547,7 +570,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.08),
+                            color: Colors.white.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -577,7 +600,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                 ),
               ),
               // Timer icon hint
-              Icon(Icons.timer_outlined, color: Colors.white.withOpacity(0.2), size: 20),
+              Icon(Icons.timer_outlined, color: Colors.white.withValues(alpha: 0.2), size: 20),
             ],
           ),
         ),
@@ -637,7 +660,7 @@ class _TodoScreenState extends State<TodoScreen> with WidgetsBindingObserver {
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.amber.withOpacity(0.25) : Colors.white.withOpacity(0.08),
+                          color: isSelected ? Colors.amber.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(16),
                           border: isSelected ? Border.all(color: Colors.amber, width: 2) : null,
                         ),
@@ -710,7 +733,6 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
   Timer? _timer;
   bool _isRunning = false;
   DateTime? _pausedAt;
-  DateTime? _startedAt;
   
   @override
   void initState() {
@@ -752,7 +774,6 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
   void _startTimer() {
     setState(() {
       _isRunning = true;
-      _startedAt = DateTime.now();
     });
     _startTimerTick();
   }
@@ -781,42 +802,31 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
     _timer?.cancel();
     setState(() => _isRunning = false);
     
-    // Show completion dialog
-    showDialog(
+    showPremiumDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.grey.shade900,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Text('🎉 ', style: TextStyle(fontSize: 28)),
-            Text('Время вышло!', style: AppTheme.titleStyle.copyWith(color: Colors.white)),
-          ],
-        ),
-        content: Text(
-          'Задача "${widget.task.title}" завершена за ${widget.minutes} минут',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-              // Mark task as completed
-              Provider.of<TodoProvider>(context, listen: false).toggleTodo(widget.task.id);
-            },
-            child: const Text('Отметить выполненной', style: TextStyle(color: Colors.green)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
-            child: Text('Закрыть', style: TextStyle(color: Colors.white54)),
-          ),
-        ],
+      title: 'Время вышло!',
+      content: Text(
+        'Задача "${widget.task.title}" завершена за ${widget.minutes} минут. Отличная работа! 🎉',
+        style: const TextStyle(color: AppTheme.white70),
+        textAlign: TextAlign.center,
       ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            Navigator.pop(context);
+          },
+          child: Text('Закрыть', style: AppTheme.bodyStyle.copyWith(color: AppTheme.white38)),
+        ),
+        TextButton(
+          onPressed: () {
+            Provider.of<TodoProvider>(context, listen: false).toggleTodo(widget.task.id);
+            Navigator.pop(context);
+            Navigator.pop(context);
+          },
+          child: Text('Выполнено', style: AppTheme.titleStyle.copyWith(color: AppTheme.accentGreen, fontSize: 16)),
+        ),
+      ],
     );
   }
   
@@ -835,9 +845,13 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/home_bg_dark.png',
-              fit: BoxFit.cover,
+            child: Consumer<UserProvider>(
+              builder: (context, user, _) {
+                return Image.asset(
+                  user.wallpaperPath,
+                  fit: BoxFit.cover,
+                );
+              }
             ),
           ),
           SafeArea(
@@ -884,8 +898,8 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
                         child: CircularProgressIndicator(
                           value: 1,
                           strokeWidth: 12,
-                          backgroundColor: Colors.white.withOpacity(0.1),
-                          valueColor: AlwaysStoppedAnimation(Colors.white.withOpacity(0.1)),
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          valueColor: AlwaysStoppedAnimation(Colors.white.withValues(alpha: 0.1)),
                         ),
                       ),
                       // Progress circle
@@ -940,7 +954,7 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
                           height: 60,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                           ),
                           child: const Icon(Icons.refresh, color: Colors.white54, size: 28),
                         ),
@@ -978,7 +992,7 @@ class _TaskTimerScreenState extends State<TaskTimerScreen> with WidgetsBindingOb
                           height: 60,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                           ),
                           child: const Icon(Icons.skip_next, color: Colors.white54, size: 28),
                         ),

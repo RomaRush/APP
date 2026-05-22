@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/data/recipe_database.dart';
-import '../../core/providers/nutrition_provider.dart';
-import 'package:provider/provider.dart';
+import '../../core/theme/app_theme.dart';
 
 class TastyRecipeScreen extends StatefulWidget {
   final RecipeData recipe;
@@ -24,45 +23,33 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    
-    // Initialize video if present
+
     if (widget.recipe.videoUrl != null) {
       if (widget.recipe.videoUrl!.startsWith('assets/') || widget.recipe.videoUrl!.startsWith('/')) {
-        // Local Asset
         _videoController = VideoPlayerController.asset(widget.recipe.videoUrl!)
           ..initialize().then((_) {
-            setState(() {
-              _isVideoInitialized = true;
-            });
+            setState(() => _isVideoInitialized = true);
             _videoController!.setLooping(true);
             _videoController!.setVolume(0);
             _videoController!.play();
           });
       } else {
-        // Network URL
-        // Simple check: play only if it looks like a file or is safe.
-        // YouTube URLs from TheMealDB cannot be played by VideoPlayerController directly.
-        // We will skip initialization for YouTube URLs and just show thumbnail + link button
         if (widget.recipe.videoUrl!.contains('youtube.com') || widget.recipe.videoUrl!.contains('youtu.be')) {
-             print('Skipping native video player for YouTube URL: ${widget.recipe.videoUrl}');
-             // Do not initialize _videoController
+          debugPrint('Skipping native video player for YouTube URL: ${widget.recipe.videoUrl}');
         } else {
           _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.recipe.videoUrl!))
             ..initialize().then((_) {
-              setState(() {
-                _isVideoInitialized = true;
-              });
+              setState(() => _isVideoInitialized = true);
               _videoController!.setLooping(true);
               _videoController!.setVolume(0);
               _videoController!.play();
             }).catchError((e) {
-               print('Error initializing video: $e');
+              debugPrint('Error initializing video: $e');
             });
         }
       }
     }
-    
-    // Set system overlay style for immersive feel
+
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
   }
 
@@ -76,26 +63,23 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // Dark background for media focus
+      backgroundColor: AppTheme.primaryDark,
       body: Stack(
         children: [
-          // Main Scrollable Content
           CustomScrollView(
             controller: _scrollController,
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // 1. Video Header
               SliverAppBar(
-                expandedHeight: MediaQuery.of(context).size.height * 0.6, // Tall header for video
+                expandedHeight: MediaQuery.of(context).size.height * 0.6,
                 pinned: true,
                 stretch: true,
-                backgroundColor: Colors.black,
+                backgroundColor: AppTheme.primaryDark,
                 flexibleSpace: FlexibleSpaceBar(
                   stretchModes: const [StretchMode.zoomBackground],
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // Video or Thumbnail
                       if (widget.recipe.videoUrl != null && _isVideoInitialized)
                         FittedBox(
                           fit: BoxFit.cover,
@@ -106,28 +90,25 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
                           ),
                         )
                       else if (widget.recipe.videoThumbnail != null)
-                        widget.recipe.videoThumbnail!.startsWith('http')
-                        ? Image.network(
-                            widget.recipe.videoThumbnail!,
-                            fit: BoxFit.cover,
-                          )
-                        : Image.asset(
-                            widget.recipe.videoThumbnail!,
-                            fit: BoxFit.cover,
-                          )
+                        Hero(
+                          tag: 'recipe_${widget.recipe.name}',
+                          child: widget.recipe.videoThumbnail!.startsWith('http')
+                              ? Image.network(widget.recipe.videoThumbnail!, fit: BoxFit.cover)
+                              : Image.asset(widget.recipe.videoThumbnail!, fit: BoxFit.cover),
+                        )
                       else
-                         // Fallback gradient if no media
-                         Container(
-                           decoration: const BoxDecoration(
-                             gradient: LinearGradient(
-                               colors: [Color(0xFF1B3D2F), Colors.black],
-                               begin: Alignment.topCenter,
-                               end: Alignment.bottomCenter,
-                             ),
-                           ),
-                         ),
-                         
-                      // Gradient Overlay for text readability
+                        Hero(
+                          tag: 'recipe_${widget.recipe.name}',
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Color(0xFF1E1E30), AppTheme.primaryDark],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ),
                       Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -169,205 +150,187 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
                 ],
               ),
 
-              // 2. Recipe Content (overlapping sliver)
               SliverToBoxAdapter(
                 child: Transform.translate(
-                  offset: const Offset(0, -20), // Pull up to overlap video
+                  offset: const Offset(0, -20),
                   child: Container(
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF1B3D2F), // Dark green theme
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceDark,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
                     ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          width: 40,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(2.5),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 12),
+                            width: 40,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: AppTheme.white38,
+                              borderRadius: BorderRadius.circular(2.5),
+                            ),
                           ),
                         ),
-                      ),
-                      
-                      // Title & Time sections
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.recipe.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                height: 1.1,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                _buildInfoChip(Icons.schedule, '${widget.recipe.cookTime} мин'),
-                                const SizedBox(width: 12),
-                                _buildInfoChip(Icons.local_fire_department, '${widget.recipe.calories.toInt()} ккал'),
-                                const SizedBox(width: 12),
-                                _buildInfoChip(Icons.restaurant, _getDifficulty(widget.recipe.cookTime)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 30),
-                      
-                      // Nutrients Row
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildNutrient('Белки', widget.recipe.proteins, Colors.redAccent),
-                              _buildNutrient('Жиры', widget.recipe.fats, Colors.amber),
-                              _buildNutrient('Углеводы', widget.recipe.carbs, Colors.blueAccent),
+                              Text(
+                                widget.recipe.name,
+                                style: AppTheme.headlineStyle.copyWith(fontSize: 32, height: 1.1),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  _buildInfoChip(Icons.schedule, '${widget.recipe.cookTime} мин'),
+                                  const SizedBox(width: 12),
+                                  _buildInfoChip(Icons.local_fire_department, '${widget.recipe.calories.toInt()} ккал'),
+                                  const SizedBox(width: 12),
+                                  _buildInfoChip(Icons.restaurant, _getDifficulty(widget.recipe.cookTime)),
+                                ],
+                              ),
                             ],
                           ),
                         ),
-                      ),
-                      
-                      const SizedBox(height: 30),
-                      
-                      // Ingredients List
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Ингредиенты',
-                              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+
+                        const SizedBox(height: 30),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: AppTheme.white08,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppTheme.white12),
                             ),
-                            const SizedBox(height: 16),
-                            ListView.separated(
-                              physics: const NeverScrollableScrollPhysics(),
-                              shrinkWrap: true,
-                              padding: EdgeInsets.zero,
-                              itemCount: widget.recipe.ingredients.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
-                              itemBuilder: (context, index) {
-                                return Row(
-                                  children: [
-                                    Container(
-                                      width: 24, height: 24,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: const Color(0xFF4CAF50), width: 1.5),
-                                      ),
-                                      child: const Icon(Icons.check, size: 14, color: Color(0xFF4CAF50)),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: Text(
-                                        widget.recipe.ingredients[index],
-                                        style: const TextStyle(color: Colors.white, fontSize: 16),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 30),
-                      
-                      // Steps List
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: const Text(
-                          'Приготовление',
-                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      ListView.builder(
-                        physics: const NeverScrollableScrollPhysics(),
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        itemCount: widget.recipe.steps.length,
-                        itemBuilder: (context, index) {
-                          // Check if we have an image for this step
-                          final hasImage = widget.recipe.stepImages.length > index;
-                          
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 30),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Шаг ${index + 1}',
-                                      style: const TextStyle(
-                                        color: Color(0xFF4CAF50),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.0,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  widget.recipe.steps[index],
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    height: 1.5,
-                                  ),
-                                ),
-                                if (hasImage) ...[
-                                   const SizedBox(height: 16),
-                                   ClipRRect(
-                                     borderRadius: BorderRadius.circular(16),
-                                     child: Image.asset(
-                                       widget.recipe.stepImages[index],
-                                       width: double.infinity,
-                                       height: 200,
-                                       fit: BoxFit.cover,
-                                     ),
-                                   ),
-                                ]
+                                _buildNutrient('Белки', widget.recipe.proteins, AppTheme.errorRed),
+                                _buildNutrient('Жиры', widget.recipe.fats, AppTheme.accentGold),
+                                _buildNutrient('Углеводы', widget.recipe.carbs, AppTheme.accentBlue),
                               ],
                             ),
-                          );
-                        },
-                      ),
-                      
-                      const SizedBox(height: 100), // Bottom padding for sticky button
-                    ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 30),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Ингредиенты', style: AppTheme.headlineStyle.copyWith(fontSize: 22)),
+                              const SizedBox(height: 16),
+                              ListView.separated(
+                                physics: const NeverScrollableScrollPhysics(),
+                                shrinkWrap: true,
+                                padding: EdgeInsets.zero,
+                                itemCount: widget.recipe.ingredients.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                                itemBuilder: (context, index) {
+                                  return Row(
+                                    children: [
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.accentGreen.withValues(alpha: 0.2),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: AppTheme.accentGreen, width: 1.5),
+                                        ),
+                                        child: const Icon(Icons.check, size: 14, color: AppTheme.accentGreen),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Text(
+                                          widget.recipe.ingredients[index],
+                                          style: AppTheme.bodyStyle.copyWith(color: AppTheme.white, fontSize: 16),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 30),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text('Приготовление', style: AppTheme.headlineStyle.copyWith(fontSize: 22)),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        ListView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          itemCount: widget.recipe.steps.length,
+                          itemBuilder: (context, index) {
+                            final hasImage = widget.recipe.stepImages.length > index;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 30),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Шаг ${index + 1}',
+                                        style: AppTheme.captionStyle.copyWith(
+                                          color: AppTheme.accentGreen,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    widget.recipe.steps[index],
+                                    style: AppTheme.bodyStyle.copyWith(
+                                      color: AppTheme.white,
+                                      fontSize: 16,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  if (hasImage) ...[
+                                    const SizedBox(height: 16),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Image.asset(
+                                        widget.recipe.stepImages[index],
+                                        width: double.infinity,
+                                        height: 200,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: 100),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
             ],
           ),
-          
-          // Sticky "Start Cooking" Button
+
           Positioned(
             bottom: 30,
             left: 20,
@@ -379,11 +342,11 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.9),
+                    color: AppTheme.accentGreen.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.4),
+                        color: AppTheme.accentGreen.withValues(alpha: 0.4),
                         blurRadius: 20,
                         offset: const Offset(0, 10),
                       ),
@@ -412,18 +375,18 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: AppTheme.white08,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppTheme.white12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white70, size: 16),
+          Icon(icon, color: AppTheme.white70, size: 16),
           const SizedBox(width: 8),
           Text(
             label,
-            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+            style: AppTheme.bodyStyle.copyWith(color: AppTheme.white, fontSize: 13, fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -435,12 +398,12 @@ class _TastyRecipeScreenState extends State<TastyRecipeScreen> {
       children: [
         Text(
           '${value.toInt()}г',
-          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          style: AppTheme.headlineStyle.copyWith(fontSize: 20, color: AppTheme.white),
         ),
         const SizedBox(height: 4),
         Text(
           label,
-          style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500),
+          style: AppTheme.captionStyle.copyWith(color: color, fontWeight: FontWeight.w500),
         ),
       ],
     );

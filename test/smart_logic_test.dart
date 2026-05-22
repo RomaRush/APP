@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/material.dart';
 import 'package:daylo_app/core/providers/finance_provider.dart';
 import 'package:daylo_app/core/providers/health_provider.dart';
 import 'package:daylo_app/core/providers/nutrition_provider.dart';

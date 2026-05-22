@@ -1,7 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../core/theme/app_theme.dart';
 import 'package:intl/intl.dart';
+import '../core/theme/app_theme.dart';
+import '../widgets/minimal_card.dart';
 
 class BalanceCard extends StatelessWidget {
   final int balance;
@@ -15,183 +15,160 @@ class BalanceCard extends StatelessWidget {
     this.expenses,
   });
 
-  String _formatBalance(int value) {
-    final formatter = NumberFormat('#,###', 'ru_RU');
-    return '${formatter.format(value)}₽';
+  String _fmt(int value) {
+    final f = NumberFormat('#,###', 'ru_RU');
+    return '${f.format(value.abs())} ₽';
   }
 
   @override
   Widget build(BuildContext context) {
     final isPositive = balance >= 0;
-    
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.black.withValues(alpha: 0.45),
-                Colors.black.withValues(alpha: 0.35),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final accent = isPositive ? AppTheme.accentGreen : AppTheme.errorRed;
+
+    return MinimalCard(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
             children: [
-              // Header with icon
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isPositive 
-                        ? Colors.green.withOpacity(0.15) 
-                        : Colors.red.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isPositive ? Icons.account_balance_wallet : Icons.trending_down,
-                      color: isPositive ? Colors.greenAccent : Colors.redAccent,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Баланс',
-                    style: AppTheme.bodyStyle.copyWith(
-                      color: AppTheme.white.withValues(alpha: 0.7),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isPositive
-                        ? Colors.green.withOpacity(0.15)
-                        : Colors.red.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      isPositive ? '↑ Плюс' : '↓ Минус',
-                      style: TextStyle(
-                        color: isPositive ? Colors.greenAccent : Colors.redAccent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              
-              // Main Balance
-              Center(
-                child: Column(
-                  children: [
-                    Text(
-                      _formatBalance(balance),
-                      style: AppTheme.headlineStyle.copyWith(
-                        fontSize: 42,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.white,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'доступно',
-                      style: AppTheme.bodyStyle.copyWith(
-                        color: AppTheme.white.withValues(alpha: 0.5),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  isPositive
+                      ? Icons.account_balance_wallet_rounded
+                      : Icons.trending_down_rounded,
+                  color: accent,
+                  size: 18,
                 ),
               ),
-              
-              // Income/Expense Row (if provided)
-              if (income != null || expenses != null) ...[
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
+              const SizedBox(width: 12),
+              Text('Баланс', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+            ],
+          ),
+
+          const SizedBox(height: 28),
+
+          // Big balance number
+          Center(
+            child: Column(
+              children: [
+                RichText(
+                  text: TextSpan(
                     children: [
-                      if (income != null) ...[
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: Colors.greenAccent,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '+${_formatBalance(income!)}',
-                                style: TextStyle(
-                                  color: Colors.greenAccent,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                      if (!isPositive)
+                        TextSpan(
+                          text: '−',
+                          style: AppTheme.headlineStyle.copyWith(
+                            fontSize: 36,
+                            color: accent,
+                            letterSpacing: -1,
                           ),
                         ),
-                      ],
-                      if (expenses != null) ...[
-                        Expanded(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '-${_formatBalance(expenses!)}',
-                                style: TextStyle(
-                                  color: Colors.redAccent,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
+                      TextSpan(
+                        text: _fmt(balance),
+                        style: AppTheme.headlineStyle.copyWith(
+                          fontSize: 36,
+                          color: isPositive ? AppTheme.white : accent,
+                          letterSpacing: -1.5,
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  'доступно сейчас',
+                  style: AppTheme.captionStyle.copyWith(fontSize: 11),
+                ),
               ],
-            ],
+            ),
           ),
-        ),
+
+          // Income/Expense row
+          if (income != null && expenses != null) ...[
+            const SizedBox(height: 24),
+            Container(
+              height: 1,
+              color: AppTheme.white12,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: _FlowItem(
+                    label: 'Доход',
+                    value: _fmt(income!),
+                    icon: Icons.arrow_downward_rounded,
+                    color: AppTheme.accentGreen,
+                  ),
+                ),
+                Container(width: 1, height: 36, color: AppTheme.white12),
+                Expanded(
+                  child: _FlowItem(
+                    label: 'Расход',
+                    value: _fmt(expenses!),
+                    icon: Icons.arrow_upward_rounded,
+                    color: AppTheme.errorRed,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
+    );
+  }
+}
+
+class _FlowItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _FlowItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: color, size: 13),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: AppTheme.captionStyle.copyWith(fontSize: 10)),
+            const SizedBox(height: 1),
+            Text(
+              value,
+              style: AppTheme.bodyStyle.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

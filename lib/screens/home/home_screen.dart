@@ -1,35 +1,35 @@
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import '../../core/l10n/app_localizations.dart';
+import '../../core/models/note.dart';
 import '../../core/models/story_entry.dart';
 import 'story_view_screen.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/providers/finance_provider.dart';
 import '../../core/providers/health_provider.dart';
 import '../../core/providers/nutrition_provider.dart';
-import '../../widgets/story_days_widget.dart';
-import '../../widgets/balance_card.dart';
-import '../../widgets/sleep_card.dart';
-import '../../widgets/status_card.dart';
-import '../../widgets/weather_widget.dart';
-import '../../widgets/ai_assistant_button.dart';
-import '../../widgets/tips_section.dart';
-import '../../widgets/app_island.dart';
 import '../../widgets/ai_chat_sheet.dart';
-import 'article_screen.dart';
-import 'story_view_screen.dart';
-import '../../widgets/mental_health_card.dart';
+import '../../widgets/minimal_card.dart';
 import '../../core/providers/user_provider.dart';
-import '../profile/profile_screen.dart';
 import '../../core/providers/smart_life_provider.dart';
+import '../profile/profile_screen.dart';
 import '../../core/providers/notes_provider.dart';
 import '../notes/notes_screen.dart';
-import '../../widgets/smart_insight_card.dart';
 import '../../core/providers/todo_provider.dart';
 import '../todo/todo_screen.dart';
+import '../finance/finance_screen.dart';
+import '../health/health_screen.dart';
+import '../health/mental_health_screen.dart';
+import '../nutrition/nutrition_screen.dart';
+import '../main_screen.dart';
+import '../../core/services/weather_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -40,12 +40,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
-  
+
   List<StoryEntry> _stories = [];
-  List<String> _blockOrder = ['balance', 'notes', 'sleep', 'status', 'weather', 'ai'];
-  bool _isEditMode = false;
-  
-  // All available blocks with their display names
+  List<String> _blockOrder = ['checklist', 'balance', 'notes', 'todo', 'sleep', 'status', 'weather', 'ai'];
+  bool _isEditing = false;
+  bool _showMorningBriefing = true;
+
   static const Map<String, String> _allBlocks = {
     'balance': 'Баланс',
     'notes': 'Заметки',
@@ -56,10 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
     'ai': 'AI Ассистент',
     'nutrition': 'Калории дня',
     'water': 'Водный баланс',
+    'checklist': 'Ежедневные цели',
+    'quick_actions': 'Быстрые действия',
   };
-  
-  // Small blocks that can fit 2 per row
-  static const Set<String> _smallBlocks = {'weather', 'status', 'ai', 'sleep'};
 
   @override
   void initState() {
@@ -71,7 +70,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getStringList('home_block_order');
     if (saved != null && saved.isNotEmpty) {
-      // Migrate old combined block keys to new individual keys
       List<String> migrated = [];
       for (final key in saved) {
         if (key == 'weather_ai') {
@@ -82,11 +80,27 @@ class _HomeScreenState extends State<HomeScreen> {
           migrated.add(key);
         }
       }
-      // Remove duplicates while preserving order
       migrated = migrated.toSet().toList();
+      if (!migrated.contains('todo')) {
+        migrated.insert(2, 'todo');
+      }
       if (migrated.isNotEmpty) {
         setState(() => _blockOrder = migrated);
-        _saveBlockOrder(); // Save migrated order
+      }
+    }
+    // Check if morning briefing was dismissed today
+    final dismissedDate = prefs.getString('morning_briefing_dismissed_date');
+    if (dismissedDate != null) {
+      final dismissed = DateTime.tryParse(dismissedDate);
+      final today = DateTime.now();
+      if (dismissed != null &&
+          dismissed.year == today.year &&
+          dismissed.month == today.month &&
+          dismissed.day == today.day) {
+        setState(() => _showMorningBriefing = false);
+      } else {
+        // New day — show again
+        setState(() => _showMorningBriefing = true);
       }
     }
   }
@@ -103,38 +117,108 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showAddBlockDialog() {
     final available = _allBlocks.keys.where((id) => !_blockOrder.contains(id)).toList();
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade900,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        decoration: const BoxDecoration(
+          color: Color(0xFF13131F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Добавить блок', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(color: AppTheme.white12, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Text('Добавить блок', style: AppTheme.titleStyle.copyWith(fontSize: 20)),
             const SizedBox(height: 16),
             if (available.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Text('Все блоки уже добавлены', style: TextStyle(color: Colors.white54)),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: Text('Все блоки уже добавлены', style: AppTheme.captionStyle)),
               )
             else
-              ...available.map((id) => ListTile(
-                leading: Icon(_getBlockIcon(id), color: Colors.white),
-                title: Text(_allBlocks[id]!, style: const TextStyle(color: Colors.white)),
-                trailing: const Icon(Icons.add_circle_outline, color: Colors.greenAccent),
-                onTap: () {
-                  setState(() => _blockOrder.add(id));
-                  _saveBlockOrder();
-                  Navigator.pop(ctx);
-                },
-              )),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: available.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, color: AppTheme.white05),
+                  itemBuilder: (context, index) {
+                    final id = available[index];
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CardIconPill(icon: _getBlockIcon(id), color: _getBlockColor(id)),
+                      title: Text(_allBlocks[id]!, style: AppTheme.bodyStyle.copyWith(color: AppTheme.white)),
+                      trailing: const Icon(Icons.add_rounded, color: AppTheme.white38),
+                      onTap: () {
+                        setState(() => _blockOrder.add(id));
+                        _saveBlockOrder();
+                        Navigator.pop(ctx);
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBlockActions(String id) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        decoration: const BoxDecoration(
+          color: Color(0xFF13131F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(color: AppTheme.white12, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Row(
+              children: [
+                CardIconPill(icon: _getBlockIcon(id), color: _getBlockColor(id)),
+                const SizedBox(width: 12),
+                Text(_allBlocks[id]!, style: AppTheme.titleStyle.copyWith(fontSize: 18)),
+              ],
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.errorRed.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.delete_rounded, color: AppTheme.errorRed, size: 20),
+              ),
+              title: Text('Удалить блок', style: AppTheme.bodyStyle.copyWith(color: AppTheme.white)),
+              subtitle: Text('Убрать "${_allBlocks[id]!}" с главного экрана', style: AppTheme.captionStyle),
+              onTap: () {
+                Navigator.pop(ctx);
+                _removeBlock(id);
+              },
+            ),
           ],
         ),
       ),
@@ -143,16 +227,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   IconData _getBlockIcon(String id) {
     switch (id) {
-      case 'balance': return Icons.account_balance_wallet;
-      case 'notes': return Icons.edit_note;
-      case 'todo': return Icons.checklist;
-      case 'sleep': return Icons.bedtime;
-      case 'status': return Icons.favorite;
-      case 'weather': return Icons.cloud;
-      case 'ai': return Icons.auto_awesome;
-      case 'nutrition': return Icons.restaurant;
-      case 'water': return Icons.water_drop;
-      default: return Icons.widgets;
+      case 'balance': return Icons.account_balance_wallet_rounded;
+      case 'notes': return Icons.edit_note_rounded;
+      case 'todo': return Icons.checklist_rounded;
+      case 'sleep': return Icons.bedtime_rounded;
+      case 'status': return Icons.favorite_rounded;
+      case 'weather': return Icons.cloud_rounded;
+      case 'ai': return Icons.auto_awesome_rounded;
+      case 'nutrition': return Icons.restaurant_rounded;
+      case 'water': return Icons.water_drop_rounded;
+      case 'quick_actions': return Icons.bolt_rounded;
+      default: return Icons.widgets_rounded;
+    }
+  }
+
+  Color _getBlockColor(String id) {
+    switch (id) {
+      case 'balance': return AppTheme.accentGreen;
+      case 'notes': return AppTheme.accentGold;
+      case 'todo': return AppTheme.accentBlue;
+      case 'sleep': return AppTheme.accentIndigo;
+      case 'status': return AppTheme.accentPink;
+      case 'weather': return AppTheme.accentBlue;
+      case 'ai': return AppTheme.accentPurple;
+      case 'nutrition': return AppTheme.accentPink;
+      case 'water': return AppTheme.accentBlue;
+      case 'quick_actions': return AppTheme.accentGold;
+      default: return AppTheme.accentIndigo;
     }
   }
 
@@ -161,74 +262,72 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
         decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(32),
-            topRight: Radius.circular(32),
-          ),
+          color: Color(0xFF13131F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Добавить историю',
-              style: AppTheme.headlineStyle.copyWith(fontSize: 20),
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(color: AppTheme.white12, borderRadius: BorderRadius.circular(2)),
+              ),
             ),
-            const SizedBox(height: 24),
+            Text('Добавить историю', style: AppTheme.titleStyle),
+            const SizedBox(height: 32),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildSourceOption(
-                  icon: Icons.camera_alt,
-                  label: 'Камера',
+                GestureDetector(
                   onTap: () {
                     Navigator.pop(context);
                     _pickStoryImage(ImageSource.camera);
                   },
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 64, height: 64,
+                        decoration: BoxDecoration(
+                          color: AppTheme.white08,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.white12),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded, color: AppTheme.white, size: 28),
+                      ),
+                      const SizedBox(height: 12),
+                      Text('Камера', style: AppTheme.captionStyle.copyWith(color: AppTheme.white70)),
+                    ],
+                  ),
                 ),
-                _buildSourceOption(
-                  icon: Icons.photo_library,
-                  label: 'Галерея',
+                GestureDetector(
                   onTap: () {
                     Navigator.pop(context);
                     _pickStoryImage(ImageSource.gallery);
                   },
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 64, height: 64,
+                        decoration: BoxDecoration(
+                          color: AppTheme.white08,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.white12),
+                        ),
+                        child: const Icon(Icons.photo_library_rounded, color: AppTheme.white, size: 28),
+                      ),
+                      const SizedBox(height: 12),
+                      Text('Галерея', style: AppTheme.captionStyle.copyWith(color: AppTheme.white70)),
+                    ],
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSourceOption({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
-        ],
       ),
     );
   }
@@ -239,13 +338,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (photo != null) {
         final jFile = File(photo.path);
         final entry = StoryEntry(file: jFile, timestamp: DateTime.now());
-        setState(() {
-          _stories.add(entry);
-        });
-        // Sync to UserProvider for Profile Screen
-        if (mounted) {
-          context.read<UserProvider>().addStoryEntry(entry);
-        }
+        setState(() => _stories.add(entry));
+        if (mounted) context.read<UserProvider>().addStoryEntry(entry);
       }
     } catch (e) {
       debugPrint('Error picking image: $e');
@@ -259,929 +353,1314 @@ class _HomeScreenState extends State<HomeScreen> {
       PageRouteBuilder(
         pageBuilder: (context, _, __) => StoryViewScreen(stories: _stories),
         opaque: false,
-        transitionsBuilder: (context, animation, _, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
+        transitionsBuilder: (context, animation, _, child) => FadeTransition(opacity: animation, child: child),
       ),
     );
-  }
-
-  void _openArticle(BuildContext context, TipCardData tip) {
-    List<ArticleBlock> blocks = [];
-    String headerImage = tip.imagePath;
-
-    if (tip.title.toLowerCase().contains('завтрак')) {
-      blocks = [
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Завтрак — это самый важный прием пищи, который запускает ваш метаболизм и заряжает энергией на первую половину дня. Пропуск завтрака может привести к упадку сил и перееданию вечером. Идеальный завтрак должен содержать сложные углеводы, белки и полезные жиры.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_food.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.recipeStep,
-          title: 'Идеальная овсянка',
-          content: 'Возьмите 50 г овсяных хлопьев (не быстрого приготовления!) и залейте их 150 мл воды или растительного молока. Добавьте щепотку соли для раскрытия вкуса. Варите на медленном огне, постоянно помешивая, чтобы каша стала кремовой и нежной.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/recipe_oatmeal_1.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Не бойтесь экспериментировать с топпингами. Это то, что делает кашу вкусной! Попробуйте добавить ложку меда, горсть орехов (грецкие или миндаль), семена чиа и свежие ягоды. Это добавит текстуру и витамины.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/recipe_oatmeal_2.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Такой завтрак обеспечит вас чувством сытости на 4-5 часов и предотвратит резкие скачки сахара в крови. Приятного аппетита!',
-        ),
-      ];
-    } else if (tip.title.toLowerCase().contains('спокойствие')) {
-      blocks = [
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'В современном мире мы постоянно подвергаемся стрессу. Уведомления, дедлайны, шум города — все это перегружает наш мозг. Найти спокойствие — это не роскошь, а необходимость для сохранения психического здоровья. Регулярные паузы помогают восстановить ресурс.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_calm.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.recipeStep,
-          title: 'Техника "Заземление"',
-          content: 'Если вы чувствуете тревогу, попробуйте технику 5-4-3-2-1. Найдите 5 предметов глазами, 4 на ощупь, 3 звука, 2 запаха и 1 вкус. Это вернет вас в момент "здесь и сейчас".',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_meditation_pose.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Медитация не требует сложных навыков. Просто сядьте удобно, закройте глаза и наблюдайте за дыханием. Если мысли приходят — отпускайте их, как облака на небе. Даже 5 минут практики в день меняют структуру мозга.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_general.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Также не забывайте про цифровой детокс. Отключайте телефон за час до сна, чтобы нервная система могла успокоиться перед отдыхом.',
-        ),
-      ];
-    } else {
-      blocks = [
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Чтение — это уникальный тренажер для мозга. Оно развивает эмпатию (способность понимать чувства других), улучшает память и концентрацию. В отличие от скроллинга ленты, чтение глубоко погружает в контекст и снижает уровень стресса уже через 6 минут.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_read.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.recipeStep,
-          title: 'Как читать больше?',
-          content: 'Секрет прост: всегда носите с собой книгу (или читалку). Читайте в очередях, в транспорте или перед сном. Замените 20 минут соцсетей на 20 страниц книги.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_library.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Создайте дома уютный уголок для чтения. Хороший свет, мягкое кресло и тишина помогут вам быстрее погрузиться в историю. Не заставляйте себя дочитывать скучные книги — жизнь слишком коротка.',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.image,
-          content: 'assets/images/tip_calm.png',
-        ),
-        ArticleBlock(
-          type: ArticleContentType.text,
-          content: 'Попробуйте чередовать жанры: художественная литература развивает воображение, а нон-фикшн дает новые знания. Главное — регулярность.',
-        ),
-      ];
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ArticleScreen(
-          title: tip.title,
-          headerImage: headerImage,
-          blocks: blocks,
-        ),
-      ),
-    );
-  }
-
-  String _getCurrentDate() {
-    final now = DateTime.now();
-    final months = [
-      'Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня',
-      'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'
-    ];
-    return '${now.day} ${months[now.month - 1]}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppTheme.primaryDark,
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // ── Wallpaper ──
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/home_bg_dark.png',
-              fit: BoxFit.cover,
+            child: Consumer<UserProvider>(
+              builder: (_, user, __) => Image.asset(
+                user.wallpaperPath,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(color: AppTheme.primaryDark),
+              ),
             ),
           ),
+
           SafeArea(
-            bottom: false,
             child: Column(
               children: [
                 Expanded(
-                  child: ReorderableListView(
+                  child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.zero,
-                    proxyDecorator: (child, index, animation) {
-                      return AnimatedBuilder(
-                        animation: animation,
-                        builder: (BuildContext context, Widget? child) => Material(color: Colors.transparent, child: child),
-                        child: child,
-                      );
-                    },
-                    header: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Column(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Header ──
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  const Text('Главная',
+                                      style: TextStyle(
+                                        fontSize: 32,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: -0.5,
+                                      )),
                                   Text(
-                                    'Главная',
-                                    style: AppTheme.headlineStyle.copyWith(
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _getCurrentDate(),
-                                    style: AppTheme.bodyStyle.copyWith(
-                                      color: AppTheme.white.withValues(alpha: 0.85),
-                                      fontSize: 15,
-                                    ),
+                                    DateFormat('d MMMM', 'ru').format(DateTime.now()),
+                                    style: AppTheme.captionStyle.copyWith(color: AppTheme.white54),
                                   ),
                                 ],
                               ),
-                              // Avatar & Edit code...
-                              Row(
+                            ),
+                            if (_isEditing)
+                              GestureDetector(
+                                onTap: () => setState(() => _isEditing = false),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accentIndigo,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text('Готово', style: AppTheme.buttonTextStyleWhite.copyWith(fontSize: 14)),
+                                ),
+                              )
+                            else ...[
+                              GestureDetector(
+                                onTap: () => Navigator.push(context,
+                                    MaterialPageRoute(builder: (_) => const ProfileScreen())),
+                                child: const Padding(
+                                  padding: EdgeInsets.only(right: 16),
+                                  child: Icon(Icons.edit, color: Colors.white70, size: 22),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => Navigator.push(context,
+                                    MaterialPageRoute(builder: (_) => const ProfileScreen())),
+                                child: Consumer<UserProvider>(
+                                  builder: (_, user, __) => Container(
+                                    width: 44, height: 44,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: AppTheme.white12, width: 2),
+                                      image: user.avatarPath != null
+                                          ? DecorationImage(
+                                              image: FileImage(File(user.avatarPath!)),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : null,
+                                    ),
+                                    child: user.avatarPath == null
+                                        ? const Icon(Icons.person, color: AppTheme.white54, size: 22)
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // ── Утренний брифинг ──
+                        if (_showMorningBriefing)
+                          Consumer<SmartLifeProvider>(
+                            builder: (_, smart, __) => Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF5C4B9E), Color(0xFF7B5EA7)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  GestureDetector(
-                                    onTap: () => setState(() => _isEditMode = !_isEditMode),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(color: _isEditMode ? AppTheme.white : Colors.transparent, shape: BoxShape.circle),
-                                      child: Icon(Icons.edit, color: _isEditMode ? AppTheme.black : AppTheme.white, size: 20),
+                                  Row(
+                                    children: [
+                                      const Text('☀️', style: TextStyle(fontSize: 18)),
+                                      const SizedBox(width: 8),
+                                      Text('Утренний брифинг',
+                                          style: AppTheme.titleStyle
+                                              .copyWith(fontSize: 16, color: Colors.white)),
+                                      const Spacer(),
+                                      GestureDetector(
+                                        onTap: () async {
+                                          setState(() => _showMorningBriefing = false);
+                                          final prefs = await SharedPreferences.getInstance();
+                                          await prefs.setString(
+                                            'morning_briefing_dismissed_date',
+                                            DateTime.now().toIso8601String(),
+                                          );
+                                        },
+                                        child: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(smart.dailyBudgetAdvice,
+                                      style: AppTheme.bodyStyle
+                                          .copyWith(color: Colors.white70, fontSize: 14)),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Заряд сил: ${smart.bodyBattery}%',
+                                    style: AppTheme.bodyStyle.copyWith(
+                                      color: const Color(0xFF4CFFB0),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-
-                                  Consumer<UserProvider>(
-                                    builder: (context, user, _) {
-                                      return GestureDetector(
-                                        onTap: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(builder: (context) => const ProfileScreen()),
-                                        ),
-                                        child: Container(
-                                          width: 50, height: 50,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(color: AppTheme.white.withValues(alpha: 0.5), width: 2),
-                                            image: DecorationImage(
-                                              image: user.avatarPath != null
-                                                  ? FileImage(File(user.avatarPath!))
-                                                  : const AssetImage('assets/images/user_avatar.png') as ImageProvider,
-                                              fit: BoxFit.cover,
-                                            ),
+                                  const SizedBox(height: 8),
+                                  GestureDetector(
+                                    onTap: () {
+                                      showModalBottomSheet(
+                                        context: context,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (ctx) => Container(
+                                          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                                          decoration: const BoxDecoration(
+                                            color: Color(0xFF13131F),
+                                            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                                          ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Center(
+                                                child: Container(
+                                                  width: 36, height: 4,
+                                                  margin: const EdgeInsets.only(bottom: 24),
+                                                  decoration: BoxDecoration(color: AppTheme.white12, borderRadius: BorderRadius.circular(2)),
+                                                ),
+                                              ),
+                                              Text('Как высчитывается заряд сил', style: AppTheme.titleStyle.copyWith(fontSize: 20)),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'Ваш "Заряд сил" рассчитывается на основе качества и продолжительности сна, вашей активности за предыдущий день и текущего эмоционального состояния.',
+                                                style: AppTheme.bodyStyle.copyWith(color: AppTheme.white70, height: 1.5),
+                                              ),
+                                              const SizedBox(height: 24),
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: AppTheme.accentIndigo,
+                                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                                  ),
+                                                  onPressed: () => Navigator.pop(ctx),
+                                                  child: Text('Понятно', style: AppTheme.buttonTextStyleWhite),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       );
                                     },
+                                    child: Text(
+                                      '(как оно высчитывается)',
+                                      style: AppTheme.captionStyle.copyWith(
+                                        color: Colors.white54,
+                                        fontSize: 12,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: Colors.white54,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ],
+                            ).animate().fadeIn(duration: 400.ms),
                           ),
-                          const SizedBox(height: 24),
-                          
-                          // Smart Insights Section
-                          Consumer<SmartLifeProvider>(
-                            builder: (context, smartLife, _) {
-                              final insights = smartLife.activeInsights;
-                              // Morning Brief Check
-                              final hour = DateTime.now().hour;
-                              final showMorningBrief = hour < 12;
-                              
-                              if (insights.isEmpty && !showMorningBrief) return const SizedBox.shrink();
-                              
-                              return Column(
-                                children: [
-                                  if (showMorningBrief)
-                                    Container(
-                                       margin: const EdgeInsets.only(bottom: 16),
-                                       padding: const EdgeInsets.all(16),
-                                       decoration: BoxDecoration(
-                                         gradient: LinearGradient(
-                                           colors: [Colors.blue.shade900.withValues(alpha: 0.5), Colors.purple.shade900.withValues(alpha: 0.5)],
-                                           begin: Alignment.topLeft,
-                                           end: Alignment.bottomRight,
-                                         ),
-                                         borderRadius: BorderRadius.circular(20),
-                                         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                                       ),
-                                       child: Column(
-                                         crossAxisAlignment: CrossAxisAlignment.start,
-                                         children: [
-                                            Row(
-                                              children: [
-                                                const Icon(Icons.wb_sunny, color: Colors.amber, size: 20),
-                                                const SizedBox(width: 8),
-                                                Text("Утренний брифинг", style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontWeight: FontWeight.bold)),
-                                              ],
+                        if (_showMorningBriefing) const SizedBox(height: 16),
+                        // ── Сторидей (Instagram style) ──
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(AppLocalizations.of(context).get('story_days'), style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                            GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    backgroundColor: const Color(0xFF13131F),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                    title: Text('Сторидей', style: AppTheme.titleStyle),
+                                    content: Text('Один кружочек — это один час вашего активного дня. Заполняйте 12 историй ежедневно, чтобы запечатлеть самые важные моменты и не упустить ни одной детали вашего дня в DAYLO!', style: AppTheme.bodyStyle.copyWith(color: AppTheme.white70)),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Понятно', style: AppTheme.titleStyle.copyWith(color: AppTheme.accentGold))),
+                                    ],
+                                  ),
+                                );
+                              },
+                              child: const Icon(Icons.info_outline_rounded, color: AppTheme.white38, size: 20),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 105,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            clipBehavior: Clip.none,
+                            children: [
+                              // Add Story
+                              GestureDetector(
+                                onTap: _addStoryPhoto,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 20),
+                                  child: Column(
+                                    children: [
+                                      Stack(
+                                        children: [
+                                          Consumer<UserProvider>(
+                                            builder: (_, user, __) => Container(
+                                              width: 70, height: 70,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: AppTheme.white08,
+                                                border: Border.all(color: AppTheme.white12, width: 1),
+                                                image: user.avatarPath != null
+                                                    ? DecorationImage(
+                                                        image: FileImage(File(user.avatarPath!)),
+                                                        fit: BoxFit.cover,
+                                                      )
+                                                    : null,
+                                              ),
+                                              child: user.avatarPath == null
+                                                  ? const Icon(Icons.person, color: AppTheme.white54, size: 32)
+                                                  : null,
                                             ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              smartLife.dailyBudgetAdvice,
-                                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                                          ),
+                                          Positioned(
+                                            bottom: 0, right: 0,
+                                            child: Container(
+                                              width: 24, height: 24,
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.accentBlue,
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: AppTheme.primaryDark, width: 3),
+                                              ),
+                                              child: const Icon(Icons.add, size: 16, color: Colors.white),
                                             ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              "Заряд сил: ${smartLife.bodyBattery}%",
-                                              style: TextStyle(
-                                                color: smartLife.bodyBattery > 70 ? Colors.greenAccent : Colors.orangeAccent, 
-                                                fontSize: 13, fontWeight: FontWeight.bold
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text('Ваша история', style: AppTheme.captionStyle.copyWith(fontSize: 11, color: AppTheme.white)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              
+                              // Consolidated Story Circle (Shows last story)
+                              if (_stories.isNotEmpty)
+                                GestureDetector(
+                                  onTap: _openStoryViewer,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 16),
+                                    child: Column(
+                                      children: [
+                                        Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            // Segmented Ring
+                                            SizedBox(
+                                              width: 78,
+                                              height: 78,
+                                              child: CustomPaint(
+                                                painter: _SegmentedRingPainter(
+                                                  totalSegments: 12,
+                                                  activeSegments: _stories.length,
+                                                ),
                                               ),
                                             ),
-                                         ],
-                                       ),
+                                            // Last Story Preview
+                                            Container(
+                                              width: 66,
+                                              height: 66,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: AppTheme.primaryDark, width: 2),
+                                                image: DecorationImage(
+                                                  image: FileImage(_stories.last.file),
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          DateFormat('HH:mm').format(_stories.last.timestamp),
+                                          style: AppTheme.captionStyle.copyWith(fontSize: 11, color: AppTheme.white54),
+                                        ),
+                                      ],
                                     ),
-                                  
-                                  ...insights.map((i) => SmartInsightCard(insight: i)),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ).animate().fadeIn(duration: 400.ms),
+                        const SizedBox(height: 20),
+
+                        // ── Label ──
+                        Text('Блоки',
+                            style: AppTheme.titleStyle
+                                .copyWith(fontSize: 15, color: AppTheme.white54)),
+                        const SizedBox(height: 12),
+
+                        // ── Reorderable Blocks ──
+                        ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          buildDefaultDragHandles: false,
+                          itemCount: _blockOrder.length,
+                          onReorder: (oldIndex, newIndex) {
+                            setState(() {
+                              if (newIndex > oldIndex) newIndex--;
+                              final item = _blockOrder.removeAt(oldIndex);
+                              _blockOrder.insert(newIndex, item);
+                            });
+                            _saveBlockOrder();
+                          },
+                          proxyDecorator: (child, index, animation) => Material(
+                            color: Colors.transparent,
+                            elevation: 4,
+                            shadowColor: AppTheme.accentIndigo.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(24),
+                            child: child,
+                          ),
+                          itemBuilder: (context, index) {
+                            final id = _blockOrder[index];
+                            final block = _buildBlockItem(id);
+                            
+                            Widget content;
+                            if (_isEditing) {
+                              content = Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: ReorderableDragStartListener(
+                                      index: index,
+                                      child: AbsorbPointer(
+                                        child: block
+                                            .animate(
+                                              onPlay: (c) => c.repeat(reverse: true),
+                                              // Add random delay to each block for "chaotic" iOS feel
+                                              delay: (index * 50).ms, 
+                                            )
+                                            .rotate(begin: -0.015, end: 0.015, duration: 120.ms, curve: Curves.easeInOutSine)
+                                            .moveX(begin: -0.5, end: 0.5, duration: 100.ms, curve: Curves.easeInOutSine)
+                                            .moveY(begin: -0.5, end: 0.5, duration: 110.ms, curve: Curves.easeInOutSine),
+                                      ),
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => _removeBlock(id),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(left: 12),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.errorRed.withValues(alpha: 0.15),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.close_rounded,
+                                            color: AppTheme.errorRed, size: 18),
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               );
-                            },
-                          ),
-                          
-                          StoryDaysWidget(
-                            filledCount: _stories.length,
-                            lastPhoto: _stories.isNotEmpty ? _stories.last.file : null,
-                            onAddTap: _addStoryPhoto,
-                            onAvatarTap: _openStoryViewer,
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-                      ),
-                    ),
-                    children: _buildBlockChildren(),
-                    onReorder: (oldIndex, newIndex) {
-                      setState(() {
-                        if (oldIndex < newIndex) newIndex -= 1;
-                        final String item = _blockOrder.removeAt(oldIndex);
-                        _blockOrder.insert(newIndex, item);
-                      });
-                      _saveBlockOrder();
-                    },
-                    footer: Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(top: 24),
-                      padding: EdgeInsets.only(left: 20, right: 20, top: 30, bottom: bottomPadding + 300),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.3),
-                            Colors.black.withValues(alpha: 0.3), 
-                            Colors.transparent,
-                          ],
-                          stops: const [0.0, 0.6, 1.0],
+                            } else {
+                              content = GestureDetector(
+                                onLongPress: () {
+                                  // Haptic feedback for editing mode
+                                  setState(() => _isEditing = true);
+                                },
+                                child: block,
+                              );
+                            }
+
+                            return Padding(
+                              key: ValueKey('block_$id'),
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: content,
+                            );
+                          },
                         ),
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
-                        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1)),
-                      ),
-                      child: TipsSection(
-                        onTipTap: (tip) => _openArticle(context, tip),
-                        tips: [
-                          TipCardData(title: 'Чем завтракать?', imagePath: 'assets/images/tip_food.png', articleContent: ''),
-                          TipCardData(title: 'как найти спокойствие?', imagePath: 'assets/images/tip_calm.png', articleContent: ''),
-                          TipCardData(title: 'Что прочитать?', imagePath: 'assets/images/tip_read.png', articleContent: ''),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
               ],
             ),
           ),
+          
+          // Transparent layer to catch taps on empty space when editing
+          if (_isEditing)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _isEditing = false),
+                behavior: HitTestBehavior.translucent,
+              ),
+            ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.small(
+        onPressed: _showAddBlockDialog,
+        backgroundColor: AppTheme.white08,
+        child: const Icon(Icons.add, color: AppTheme.white),
+      ),
+    );
+  }
+
+
+  void _showQuickTransaction(BuildContext context, bool isExpense) {
+    final titleCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    bool isCash = false;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF13131F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24, 
+          left: 24, 
+          right: 24, 
+          top: 24
+        ),
+        child: StatefulBuilder(
+          builder: (context, setModal) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(isExpense ? 'Новый расход' : 'Новый доход', style: AppTheme.headlineStyle.copyWith(fontSize: 20)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: titleCtrl,
+                style: AppTheme.bodyStyle,
+                decoration: InputDecoration(
+                  hintText: 'Название (Кофе, Зарплата...)',
+                  hintStyle: AppTheme.captionStyle,
+                  filled: true,
+                  fillColor: AppTheme.white08,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: TextInputType.number,
+                style: AppTheme.bodyStyle,
+                decoration: InputDecoration(
+                  hintText: 'Сумма (₽)',
+                  hintStyle: AppTheme.captionStyle,
+                  filled: true,
+                  fillColor: AppTheme.white08,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.money_rounded, color: AppTheme.white54, size: 20),
+                  const SizedBox(width: 12),
+                  Text('Наличные', style: AppTheme.bodyStyle),
+                  const Spacer(),
+                  Switch(
+                    value: isCash,
+                    onChanged: (val) => setModal(() => isCash = val),
+                    activeColor: AppTheme.accentGreen,
+                    activeTrackColor: AppTheme.accentGreen.withValues(alpha: 0.2),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final amt = double.tryParse(amountCtrl.text) ?? 0;
+                    if (titleCtrl.text.isNotEmpty && amt > 0) {
+                      context.read<FinanceProvider>().addTransaction(titleCtrl.text, amt.toInt(), isExpense, isCash: isCash);
+                      Navigator.pop(ctx);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isExpense ? AppTheme.errorRed : AppTheme.accentGreen,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text('Добавить', style: AppTheme.titleStyle.copyWith(color: AppTheme.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showQuickNote(BuildContext context) {
+    final titleCtrl = TextEditingController();
+    final contentCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF13131F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24, 
+          left: 24, 
+          right: 24, 
+          top: 24
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Быстрая заметка', style: AppTheme.headlineStyle.copyWith(fontSize: 20)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: titleCtrl,
+              style: AppTheme.bodyStyle,
+              decoration: InputDecoration(
+                hintText: 'Заголовок',
+                hintStyle: AppTheme.captionStyle,
+                filled: true,
+                fillColor: AppTheme.white08,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: contentCtrl,
+              style: AppTheme.bodyStyle,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Текст заметки',
+                hintStyle: AppTheme.captionStyle,
+                filled: true,
+                fillColor: AppTheme.white08,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {
+                  if (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty) {
+                    context.read<NotesProvider>().addNote(
+                      Note(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        title: titleCtrl.text.isEmpty ? 'Без названия' : titleCtrl.text,
+                        content: contentCtrl.text,
+                        createdAt: DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      ),
+                    );
+                    Navigator.pop(ctx);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accentGold,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text('Сохранить', style: AppTheme.titleStyle.copyWith(color: AppTheme.primaryDark)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQuickMood(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF13131F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Как вы себя чувствуете?', style: AppTheme.headlineStyle.copyWith(fontSize: 20)),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _moodBtn(ctx, 'Отлично', Colors.green),
+                _moodBtn(ctx, 'Нормально', Colors.blue),
+                _moodBtn(ctx, 'Устал', Colors.orange),
+                _moodBtn(ctx, 'Плохо', Colors.red),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _moodBtn(BuildContext context, String title, Color color) {
+    return GestureDetector(
+      onTap: () {
+        context.read<HealthProvider>().updateMentalHealth(title, color);
+        Navigator.pop(context);
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.mood, color: color, size: 28),
+          ),
+          const SizedBox(height: 8),
+          Text(title, style: AppTheme.captionStyle.copyWith(fontSize: 11)),
         ],
       ),
     );
   }
 
-  List<Widget> _buildBlockChildren() {
-    List<Widget> children = [];
-    int i = 0;
-    
-    while (i < _blockOrder.length) {
-      final blockId = _blockOrder[i];
-      final isSmall = _smallBlocks.contains(blockId);
-      final hasNextSmall = i + 1 < _blockOrder.length && _smallBlocks.contains(_blockOrder[i + 1]);
-      
-      if (isSmall && hasNextSmall) {
-        // Two small blocks side by side - create a Row with both
-        final nextBlockId = _blockOrder[i + 1];
-        children.add(
-          Padding(
-            key: ValueKey('row_${blockId}_$nextBlockId'),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _buildDraggableBlock(blockId, isHalfWidth: true),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildDraggableBlock(nextBlockId, isHalfWidth: true),
-                ),
-              ],
-            ),
-          ),
-        );
-        i += 2;
-      } else {
-        // Single block (big or unpaired small)
-        children.add(
-          Padding(
-            key: ValueKey(blockId),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-            child: _buildDraggableBlock(blockId, isHalfWidth: false),
-          ),
-        );
-        i += 1;
-      }
-    }
-    
-    // Add block button in edit mode
-    if (_isEditMode) {
-      children.add(
-        Padding(
-          key: const ValueKey('add_block'),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-          child: GestureDetector(
-            onTap: _showAddBlockDialog,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2), style: BorderStyle.solid),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Icon(Icons.add_circle_outline, color: Colors.white54),
-                  SizedBox(width: 8),
-                  Text('Добавить блок', style: TextStyle(color: Colors.white54, fontSize: 16)),
-                ],
-              ),
-            ),
-          ),
+  void _showQuickSleep(BuildContext context) {
+    final hoursCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF13131F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24, 
+          left: 24, 
+          right: 24, 
+          top: 24
         ),
-      );
-    }
-    
-    return children;
-  }
-  
-  Widget _buildDraggableBlock(String blockId, {required bool isHalfWidth}) {
-    return Stack(
-      children: [
-        _buildBlock(blockId),
-        if (_isEditMode) ...[
-          Positioned.fill(child: Container(color: Colors.transparent)),
-          Positioned(
-            right: 8,
-            top: 8,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: () => _removeBlock(blockId),
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                    child: const Icon(Icons.close, color: Colors.white, size: 14),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.drag_indicator, color: Colors.white, size: 14),
-                ),
-              ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Сколько вы спали?', style: AppTheme.headlineStyle.copyWith(fontSize: 20)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: hoursCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: AppTheme.bodyStyle,
+              decoration: InputDecoration(
+                hintText: 'Часы (например, 7.5)',
+                hintStyle: AppTheme.captionStyle,
+                filled: true,
+                fillColor: AppTheme.white08,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+              ),
             ),
-          ),
-        ],
-      ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {
+                  final h = double.tryParse(hoursCtrl.text.replaceAll(',', '.')) ?? 0;
+                  if (h > 0) {
+                    final now = DateTime.now();
+                    context.read<HealthProvider>().setSleepTimes(now.subtract(Duration(minutes: (h * 60).toInt())), now);
+                    Navigator.pop(ctx);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accentIndigo,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text('Сохранить', style: AppTheme.titleStyle.copyWith(color: AppTheme.white)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildBlock(String id) {
+  Widget _buildBlockItem(String id) {
     switch (id) {
+      case 'checklist':
+        return _buildChecklistBlock();
       case 'balance':
-        return Consumer<FinanceProvider>(
-          builder: (context, finance, _) => BalanceCard(balance: finance.balance),
+        return MinimalCard(
+          onTap: () => context.findAncestorStateOfType<MainScreenState>()?.switchTab(3),
+          child: Consumer<FinanceProvider>(
+            builder: (context, finance, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentGreen.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(Icons.account_balance_wallet_rounded,
+                          color: AppTheme.accentGreen, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Text('Баланс', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentGreen.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.arrow_upward_rounded,
+                              color: AppTheme.accentGreen, size: 13),
+                          const SizedBox(width: 3),
+                          Text('Плюс',
+                              style: AppTheme.captionStyle.copyWith(
+                                  color: AppTheme.accentGreen,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Center(
+                  child: Column(
+                    children: [
+                      Text(
+                        '${finance.balance} ₽',
+                        style: AppTheme.headlineStyle.copyWith(
+                            fontSize: 38, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('доступно',
+                          style: AppTheme.captionStyle.copyWith(
+                              letterSpacing: 1.5, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
+
       case 'sleep':
-        return Consumer<HealthProvider>(
-          builder: (context, health, _) {
-            return SleepCard(
-              weeklyData: [6.5, 7.0, 6.8, 7.2, 5.5, 8.0, health.sleepHours], 
-              todayHours: health.sleepHours,
-            );
-          }
+        return MinimalCard(
+          onTap: () => context.findAncestorStateOfType<MainScreenState>()?.switchTab(2),
+          child: Consumer<HealthProvider>(
+              builder: (context, health, _) => Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentIndigo.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.bedtime_rounded, color: AppTheme.accentIndigo, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Сон', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                      Text('${health.sleepHours.toStringAsFixed(1)} ч сегодня', style: AppTheme.captionStyle),
+                    ],
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right_rounded, color: AppTheme.white38),
+                ],
+              ),
+            ),
         );
       case 'status':
-        return Consumer<HealthProvider>(
-          builder: (context, health, _) {
-            return StatusCard(
-              customText: health.mentalStatus.toLowerCase(),
-              customColor: health.mentalColor,
-            );
-          }
+        return MinimalCard(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MentalHealthScreen())),
+          child: Consumer<HealthProvider>(
+              builder: (context, health, _) => Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: health.mentalColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(Icons.favorite_rounded, color: health.mentalColor, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Настроение', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                      Text(health.mentalStatus, style: AppTheme.captionStyle),
+                    ],
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right_rounded, color: AppTheme.white38),
+                ],
+              ),
+            ),
         );
       case 'notes':
-        return Consumer<NotesProvider>(
-          builder: (context, notesProvider, _) {
-            return GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotesScreen())),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
+        return MinimalCard(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotesScreen())),
+          child: Consumer<NotesProvider>(
+              builder: (context, notes, _) => Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        width: 1,
-                      ),
+                      color: AppTheme.accentGold.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.25),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.edit_note, color: Colors.amber, size: 24),
-                        ),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Заметки', style: AppTheme.titleStyle.copyWith(color: Colors.white, fontSize: 16)),
-                            const SizedBox(height: 4),
-                            Text(
-                              notesProvider.notes.isEmpty 
-                                  ? 'Создать новую' 
-                                  : '${notesProvider.notes.length} шт.', 
-                              style: AppTheme.bodyStyle.copyWith(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                        Icon(Icons.arrow_forward_ios, color: Colors.white.withValues(alpha: 0.3), size: 16),
-                      ],
-                    ),
+                    child: const Icon(Icons.edit_note_rounded, color: AppTheme.accentGold, size: 18),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Заметки', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                      Text('${notes.notes.length} записей', style: AppTheme.captionStyle),
+                    ],
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right_rounded, color: AppTheme.white38),
+                ],
               ),
-            );
-          },
+            ),
         );
       case 'todo':
-        return Consumer<TodoProvider>(
-          builder: (context, todoProvider, _) {
-            return GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TodoScreen())),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
+        return MinimalCard(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TodoScreen())),
+          child: Consumer<TodoProvider>(
+              builder: (context, todo, _) => Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        width: 1,
-                      ),
+                      color: AppTheme.accentBlue.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent.withValues(alpha: 0.25),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.checklist, color: Colors.blueAccent, size: 24),
-                        ),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Задачи', style: AppTheme.titleStyle.copyWith(color: Colors.white, fontSize: 16)),
-                            const SizedBox(height: 4),
-                            Text(
-                              todoProvider.pendingTodos == 0
-                                  ? 'Все выполнено ✓'
-                                  : '${todoProvider.pendingTodos} активных',
-                              style: AppTheme.bodyStyle.copyWith(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                        if (todoProvider.pendingTodos > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.blueAccent,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${todoProvider.pendingTodos}',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                          )
-                        else
-                          Icon(Icons.arrow_forward_ios, color: Colors.white.withValues(alpha: 0.3), size: 16),
-                      ],
-                    ),
+                    child: const Icon(Icons.checklist_rounded, color: AppTheme.accentBlue, size: 18),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Задачи', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                      Text('${todo.todos.where((t) => !t.isCompleted).length} активных', style: AppTheme.captionStyle),
+                    ],
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right_rounded, color: AppTheme.white38),
+                ],
               ),
-            );
-          },
+            ),
         );
       case 'weather':
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-              ),
-              child: const WeatherWidget(),
+        return Consumer<WeatherService>(
+          builder: (context, weather, _) => MinimalCard(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentBlue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Text(
+                    weather.condition.contains(' ') ? weather.condition.split(' ').last : '🌤️',
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Погода', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                    weather.isLoading
+                        ? Text('Загрузка...', style: AppTheme.captionStyle)
+                        : Text(
+                            weather.temperature != null
+                                ? '${weather.condition.split(' ').first} · ${weather.temperature!.round()}°C'
+                                : 'Нет данных',
+                            style: AppTheme.captionStyle,
+                          ),
+                  ],
+                ),
+                const Spacer(),
+                if (weather.temperature != null && !weather.isLoading)
+                  Text(
+                    '${weather.temperature!.round()}°',
+                    style: AppTheme.titleStyle.copyWith(
+                      color: AppTheme.accentBlue,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
             ),
           ),
         );
       case 'ai':
-        return GestureDetector(
-          onTap: () => _showAiChat(context),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        return MinimalCard(
+          onTap: () => showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            isScrollControlled: true,
+            builder: (_) => const AIChatSheet(),
+          ),
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.accentPurple.withValues(alpha: 0.15),
+              AppTheme.accentIndigo.withValues(alpha: 0.08),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: AppTheme.accentPurple.withValues(alpha: 0.2)),
+          child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentPurple.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: const Icon(Icons.auto_awesome_rounded, color: AppTheme.accentPurple, size: 18),
                 ),
-                child: Column(
+                const SizedBox(width: 12),
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.blue.shade400, Colors.purple.shade400],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 2),
-                    Text('Спросить', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+                    Text('AI Ассистент', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                    Text('Нажмите, чтобы открыть чат', style: AppTheme.captionStyle),
                   ],
                 ),
-              ),
+                const Spacer(),
+                const Icon(Icons.chevron_right_rounded, color: AppTheme.white38),
+              ],
             ),
-          ),
         );
       case 'nutrition':
-        return Consumer<NutritionProvider>(
-          builder: (context, nutrition, _) {
-            final percent = (nutrition.totalCalories / nutrition.calorieGoal).clamp(0.0, 1.0);
-            final remaining = (nutrition.calorieGoal - nutrition.totalCalories).toInt();
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        return MinimalCard(
+          onTap: () => context.findAncestorStateOfType<MainScreenState>()?.switchTab(4),
+          child: Consumer<NutritionProvider>(
+              builder: (context, nutrition, _) => Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentPink.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.restaurant_rounded, color: AppTheme.accentPink, size: 18),
                   ),
-                  child: Column(
+                  const SizedBox(width: 12),
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(Icons.local_fire_department, color: Colors.orange.shade300, size: 22),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Калории', style: AppTheme.titleStyle.copyWith(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                                  Text(
-                                    remaining > 0 ? 'Осталось $remaining ккал' : 'Превышено на ${-remaining} ккал',
-                                    style: TextStyle(color: remaining > 0 ? Colors.white54 : Colors.redAccent, fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: percent > 1 ? Colors.red.withValues(alpha: 0.3) : Colors.green.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              '${(percent * 100).toInt()}%',
-                              style: TextStyle(
-                                color: percent > 1 ? Colors.redAccent : Colors.greenAccent,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Progress bar
-                      Container(
-                        height: 12,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(6),
-                          color: Colors.white.withValues(alpha: 0.1),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: percent.clamp(0.0, 1.0),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: percent > 1 
-                                      ? [Colors.red.shade400, Colors.red.shade600]
-                                      : [Colors.orange.shade400, Colors.deepOrange.shade400],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Macros row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildMacroItem('Б', nutrition.totalProteins.toInt(), nutrition.proteinGoal.toInt(), Colors.blue.shade300),
-                          _buildMacroItem('Ж', nutrition.totalFats.toInt(), nutrition.fatGoal.toInt(), Colors.orange.shade300),
-                          _buildMacroItem('У', nutrition.totalCarbs.toInt(), nutrition.carbGoal.toInt(), Colors.green.shade300),
-                        ],
-                      ),
+                      Text('Калории дня', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                      Text('${nutrition.totalCalories.toInt()} / ${nutrition.calorieGoal.toInt()} ккал', style: AppTheme.captionStyle),
                     ],
                   ),
-                ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right_rounded, color: AppTheme.white38),
+                ],
               ),
-            );
-          },
+            ),
         );
       case 'water':
         return Consumer<NutritionProvider>(
           builder: (context, nutrition, _) {
-            final waterPercent = nutrition.waterGlasses / nutrition.waterGoal;
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color.lerp(Colors.black.withValues(alpha: 0.35), Colors.blue.shade800.withValues(alpha: 0.5), waterPercent)!,
-                        Color.lerp(Colors.black.withValues(alpha: 0.35), Colors.cyan.shade700.withValues(alpha: 0.4), waterPercent)!,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+            final progress = (nutrition.waterGlasses / nutrition.waterGoal).clamp(0.0, 1.0);
+            final waterColor = Color.lerp(
+              AppTheme.white08, 
+              AppTheme.accentBlue.withValues(alpha: 0.25), 
+              progress
+            );
+            
+            return MinimalCard(
+              color: waterColor,
+              onTap: () => context.findAncestorStateOfType<MainScreenState>()?.switchTab(4),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentBlue.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
                     ),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    child: const Icon(Icons.water_drop_rounded, color: AppTheme.accentBlue, size: 18),
                   ),
-                  child: Row(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Водный баланс', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                        Text('${nutrition.waterGlasses} / ${nutrition.waterGoal} стаканов', style: AppTheme.captionStyle),
+                      ],
+                    ),
+                  ),
+                  Row(
                     children: [
-                      // Water glass visualization
-                      Container(
-                        width: 50,
-                        height: 70,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.lightBlueAccent.withValues(alpha: 0.5), width: 2),
-                        ),
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: FractionallySizedBox(
-                                heightFactor: waterPercent.clamp(0.0, 1.0),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [Colors.lightBlueAccent.withValues(alpha: 0.8), Colors.blue.withValues(alpha: 0.6)],
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              child: Text(
-                                '${nutrition.waterGlasses}',
-                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
+                      GestureDetector(
+                        onTap: () {
+                          nutrition.removeLastDrink();
+                          HapticFeedback.lightImpact();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.white08,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.remove_rounded, color: AppTheme.white54, size: 18),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Водный баланс', style: AppTheme.titleStyle.copyWith(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${nutrition.waterMl} / ${nutrition.waterGoalMl} мл',
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
-                            ),
-                            const SizedBox(height: 8),
-                            // Progress dots
-                            Row(
-                              children: List.generate(nutrition.waterGoal, (i) => Container(
-                                margin: const EdgeInsets.only(right: 6),
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: i < nutrition.waterGlasses 
-                                      ? Colors.lightBlueAccent 
-                                      : Colors.white.withValues(alpha: 0.2),
-                                ),
-                              )),
-                            ),
-                          ],
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          nutrition.addDrink(DrinkType.water, 250);
+                          context.read<UserProvider>().completeDailyTask('water');
+                          HapticFeedback.mediumImpact();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentBlue.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.add_rounded, color: AppTheme.accentBlue, size: 18),
                         ),
-                      ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () => nutrition.addWater(),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.lightBlueAccent,
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Icon(Icons.add, color: Colors.white, size: 22),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: () => nutrition.removeWater(),
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.remove, color: Colors.white54, size: 18),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
-                ),
+                ],
               ),
             );
           },
+        );
+      case 'quick_actions':
+        return MinimalCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentGold.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.bolt_rounded, color: AppTheme.accentGold, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('Быстрые действия', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  children: [
+                    _QuickActionBtn(
+                      label: 'Расход',
+                      icon: Icons.money_off_rounded,
+                      color: AppTheme.errorRed,
+                      onTap: () => _showQuickTransaction(context, true),
+                    ),
+                    _QuickActionBtn(
+                      label: 'Доход',
+                      icon: Icons.attach_money_rounded,
+                      color: AppTheme.accentGreen,
+                      onTap: () => _showQuickTransaction(context, false),
+                    ),
+                    _QuickActionBtn(
+                      label: 'Заметка',
+                      icon: Icons.edit_note_rounded,
+                      color: AppTheme.accentGold,
+                      onTap: () => _showQuickNote(context),
+                    ),
+                    _QuickActionBtn(
+                      label: 'Настроение',
+                      icon: Icons.emoji_emotions_rounded,
+                      color: AppTheme.accentPurple,
+                      onTap: () => _showQuickMood(context),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       default:
         return const SizedBox.shrink();
     }
   }
-
-  Widget _buildMacroItem(String label, int current, int goal, Color color) {
-    final percent = (current / goal).clamp(0.0, 1.0);
-    return Column(
-      children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 44,
-              height: 44,
-              child: CircularProgressIndicator(
-                value: percent,
-                strokeWidth: 4,
-                backgroundColor: Colors.white.withValues(alpha: 0.1),
-                valueColor: AlwaysStoppedAnimation(color),
+  Widget _buildChecklistBlock() {
+    return Consumer<UserProvider>(
+      builder: (context, user, _) {
+        final tasks = user.dailyTasks;
+        return MinimalCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Ежедневные цели', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                  Text('${tasks.values.where((v) => v).length} / ${tasks.length}', 
+                    style: AppTheme.captionStyle.copyWith(color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
+                ],
               ),
-            ),
-            Text('$current', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-      ],
+              const SizedBox(height: 16),
+              _buildChecklistItem('Заметка', tasks['note']!, Icons.edit_note_rounded, AppTheme.accentGold),
+              _buildChecklistItem('Калории', tasks['calories']!, Icons.restaurant_rounded, AppTheme.accentPink),
+              _buildChecklistItem('Вода', tasks['water']!, Icons.water_drop_rounded, AppTheme.accentBlue),
+              _buildChecklistItem('Настроение', tasks['mood']!, Icons.emoji_emotions_rounded, AppTheme.accentPurple),
+              _buildChecklistItem('Дыхание', tasks['breathing']!, Icons.air_rounded, AppTheme.accentGreen),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  void _showAiChat(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const AIChatSheet(),
+  Widget _buildChecklistItem(String title, bool isDone, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isDone ? color.withValues(alpha: 0.2) : AppTheme.white05,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: isDone ? color : AppTheme.white38, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Text(title, style: AppTheme.bodyStyle.copyWith(
+            color: isDone ? AppTheme.white : AppTheme.white54,
+            decoration: isDone ? TextDecoration.lineThrough : null,
+          )),
+          const Spacer(),
+          if (isDone)
+            const Icon(Icons.check_circle_rounded, color: AppTheme.accentGreen, size: 18)
+          else
+            Container(
+              width: 18, height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppTheme.white12, width: 2),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegmentedRingPainter extends CustomPainter {
+  final int totalSegments;
+  final int activeSegments;
+
+  _SegmentedRingPainter({
+    required this.totalSegments,
+    required this.activeSegments,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    const strokeWidth = 2.5;
+    const spacing = 0.12; // gap between segments in radians
+
+    final segmentAngle = (2 * 3.1415926535 - (spacing * totalSegments)) / totalSegments;
+
+    for (int i = 0; i < totalSegments; i++) {
+      Color color;
+      if (activeSegments >= totalSegments) {
+        color = const Color(0xFF4CFFB0); // Green if goal met
+      } else if (i < activeSegments) {
+        color = Colors.white; // White for active
+      } else {
+        color = Colors.white.withValues(alpha: 0.15); // Gray for inactive
+      }
+
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round;
+
+      // Start from top (-90 degrees)
+      final startAngle = i * (segmentAngle + spacing) - (3.1415926535 / 2) + (spacing / 2);
+      
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius - strokeWidth / 2),
+        startAngle,
+        segmentAngle,
+        false,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _QuickActionBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionBtn({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 8),
+            Text(label, style: AppTheme.bodyStyle.copyWith(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
+          ],
+        ),
+      ),
     );
   }
 }

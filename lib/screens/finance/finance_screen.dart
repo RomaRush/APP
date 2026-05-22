@@ -1,689 +1,356 @@
-import 'dart:io';
-import 'dart:ui';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:barcode_widget/barcode_widget.dart' as bw;
-import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/providers/finance_provider.dart';
-import 'package:fl_chart/fl_chart.dart';
-
-const Color kFinanceTeal = Color(0xFF03332D); 
-const Color kFinanceCardBorder = Color(0xFF8BACA8);
+import '../../core/providers/user_provider.dart';
+import '../../widgets/minimal_card.dart';
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
-
   @override
   State<FinanceScreen> createState() => _FinanceScreenState();
 }
 
 class _FinanceScreenState extends State<FinanceScreen> {
-  final ImagePicker _picker = ImagePicker();
-  final MobileScannerController _scannerController = MobileScannerController();
+  final _fmt = NumberFormat('#,###', 'ru_RU');
 
-  void _showIncomeStatsModal(BuildContext context, FinanceProvider finance) {
-    final incomeTransactions = finance.transactions.where((t) => !t.isExpense).toList();
-    _showTransactionsModal(context, 'Доходы 💰', incomeTransactions, Colors.greenAccent);
-  }
+  String _fmtMoney(num v) => '${_fmt.format(v.abs())} ₽';
 
-  void _showExpenseStatsModal(BuildContext context, FinanceProvider finance) {
-    final expenseTransactions = finance.transactions.where((t) => t.isExpense).toList();
-    _showTransactionsModal(context, 'Расходы 💸', expenseTransactions, Colors.redAccent);
-  }
-
-  void _showTransactionsModal(BuildContext context, String title, List<Transaction> transactions, Color color) {
-    // Group transactions by title for pie chart
-    final Map<String, int> groupedData = {};
-    for (var t in transactions) {
-      groupedData[t.title] = (groupedData[t.title] ?? 0) + t.amount;
-    }
-    final total = transactions.fold(0, (sum, t) => sum + t.amount);
-    
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[700],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Всего: $total₽',
-              style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 16),
-            // Pie Chart
-            if (groupedData.isNotEmpty)
-              SizedBox(
-                height: 180,
-                child: PieChart(
-                  PieChartData(
-                    sectionsSpace: 2,
-                    centerSpaceRadius: 40,
-                    sections: () {
-                      final colors = [
-                        Colors.blueAccent, Colors.greenAccent, Colors.orangeAccent,
-                        Colors.purpleAccent, Colors.tealAccent, Colors.pinkAccent,
-                        Colors.amberAccent, Colors.cyanAccent, Colors.indigoAccent,
-                      ];
-                      int colorIndex = 0;
-                      return groupedData.entries.map((entry) {
-                        final percent = total > 0 ? (entry.value / total * 100) : 0;
-                        final sectionColor = colors[colorIndex % colors.length];
-                        colorIndex++;
-                        return PieChartSectionData(
-                          value: entry.value.toDouble(),
-                          title: percent > 8 ? '${percent.toStringAsFixed(0)}%' : '',
-                          color: sectionColor,
-                          radius: 50,
-                          titleStyle: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                        );
-                      }).toList();
-                    }(),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 8),
-            // Legend
-            if (groupedData.isNotEmpty)
-              SizedBox(
-                height: 40,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: () {
-                    final colors = [
-                      Colors.blueAccent, Colors.greenAccent, Colors.orangeAccent,
-                      Colors.purpleAccent, Colors.tealAccent, Colors.pinkAccent,
-                      Colors.amberAccent, Colors.cyanAccent, Colors.indigoAccent,
-                    ];
-                    int colorIndex = 0;
-                    return groupedData.entries.map((entry) {
-                      final legendColor = colors[colorIndex % colors.length];
-                      colorIndex++;
-                      return Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(width: 12, height: 12, decoration: BoxDecoration(color: legendColor, borderRadius: BorderRadius.circular(3))),
-                            const SizedBox(width: 4),
-                            Text(entry.key.length > 10 ? '${entry.key.substring(0, 10)}...' : entry.key, 
-                              style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                          ],
-                        ),
-                      );
-                    }).toList();
-                  }(),
-                ),
-              ),
-            const Divider(color: Colors.white12),
-            Expanded(
-              child: transactions.isEmpty
-                  ? const Center(
-                      child: Text('Нет транзакций', style: TextStyle(color: Colors.white54)),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: transactions.length,
-                      itemBuilder: (context, index) {
-                        final t = transactions[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      t.title,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                    ),
-                                    Text(
-                                      DateFormat('dd.MM.yyyy HH:mm').format(t.date),
-                                      style: const TextStyle(color: Colors.white54, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '${t.amount}₽',
-                                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  // ── Add Transaction ─────────────────────────────────────────────────────────
   void _showAddTransactionDialog(BuildContext context) {
+    final titleCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
     bool isExpense = true;
     bool isCash = false;
-    final titleController = TextEditingController();
-    final amountController = TextEditingController();
+    TransactionCategory selectedCategory = TransactionCategory.other;
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            backgroundColor: kFinanceTeal,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: const BorderSide(color: Colors.white, width: 1),
-            ),
-            title: const Text('Добавить', style: TextStyle(color: Colors.white)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Расход'),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _DarkSheet(
+          child: StatefulBuilder(
+            builder: (context, setModal) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Новая транзакция', style: AppTheme.titleStyle),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _TypeChip(
+                        label: 'Расход',
+                        icon: Icons.arrow_upward_rounded,
                         selected: isExpense,
-                        onSelected: (val) => setState(() => isExpense = true),
-                        selectedColor: Colors.redAccent.withValues(alpha: 0.5),
-                        labelStyle: TextStyle(color: isExpense ? Colors.white : Colors.black),
+                        color: AppTheme.errorRed,
+                        onTap: () => setModal(() => isExpense = true),
                       ),
-                      const SizedBox(width: 10),
-                      ChoiceChip(
-                        label: const Text('Доход'),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _TypeChip(
+                        label: 'Доход',
+                        icon: Icons.arrow_downward_rounded,
                         selected: !isExpense,
-                        onSelected: (val) => setState(() => isExpense = false),
-                        selectedColor: Colors.greenAccent.withValues(alpha: 0.5),
-                        labelStyle: TextStyle(color: !isExpense ? Colors.white : Colors.black),
+                        color: AppTheme.accentGreen,
+                        onTap: () => setModal(() => isExpense = false),
                       ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _SheetTextField(controller: titleCtrl, label: 'Название', hint: 'Кофе, зарплата...'),
+                const SizedBox(height: 12),
+                _SheetTextField(
+                  controller: amountCtrl,
+                  label: 'Сумма',
+                  hint: '0 ₽',
+                  inputType: const TextInputType.numberWithOptions(decimal: false),
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                ),
+                if (isExpense) ...[
+                  const SizedBox(height: 16),
+                  Text('Категория', style: AppTheme.captionStyle.copyWith(fontSize: 12, color: AppTheme.white54)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final cat in TransactionCategory.values.where((c) => c != TransactionCategory.income))
+                        GestureDetector(
+                          onTap: () => setModal(() => selectedCategory = cat),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: selectedCategory == cat ? cat.color.withValues(alpha: 0.2) : AppTheme.white08,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: selectedCategory == cat ? cat.color : Colors.transparent,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(cat.icon, size: 13, color: selectedCategory == cat ? cat.color : AppTheme.white38),
+                                const SizedBox(width: 4),
+                                Text(cat.label, style: AppTheme.captionStyle.copyWith(
+                                  color: selectedCategory == cat ? cat.color : AppTheme.white54,
+                                  fontSize: 12,
+                                )),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: titleController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Название',
-                      labelStyle: TextStyle(color: Colors.white70),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-                    ),
-                  ),
-                  TextField(
-                    controller: amountController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Сумма',
-                      labelStyle: TextStyle(color: Colors.white70),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-                    ),
-                  ),
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Отмена', style: TextStyle(color: Colors.white54)),
-              ),
-              TextButton(
-                onPressed: () {
-                  final amount = int.tryParse(amountController.text);
-                  if (titleController.text.isNotEmpty && amount != null) {
-                    Provider.of<FinanceProvider>(context, listen: false)
-                        .addTransaction(titleController.text, amount, isExpense, isCash: isCash);
-                    Navigator.pop(context);
-                  }
-                },
-                child: const Text('Добавить', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        }
-      ),
-    );
-  }
-
-  void _showAddSubscriptionDialog(BuildContext context) {
-    final titleController = TextEditingController();
-    final amountController = TextEditingController();
-    DateTime? selectedDate;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            backgroundColor: kFinanceTeal,
-            shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: const BorderSide(color: Colors.white, width: 1)),
-            title: const Text('Подписка', style: TextStyle(color: Colors.white)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Сервис',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-                  ),
-                ),
-                TextField(
-                  controller: amountController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Стоимость (мес)',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-                  ),
-                ),
                 const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now().add(const Duration(days: 30)),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                    );
-                    if (date != null) {
-                      setState(() => selectedDate = date);
+                Row(
+                  children: [
+                    const Icon(Icons.money_rounded, color: AppTheme.white54, size: 20),
+                    const SizedBox(width: 12),
+                    Text('Наличные', style: AppTheme.bodyStyle),
+                    const Spacer(),
+                    Switch(
+                      value: isCash,
+                      onChanged: (val) => setModal(() => isCash = val),
+                      activeColor: AppTheme.accentGreen,
+                      activeTrackColor: AppTheme.accentGreen.withValues(alpha: 0.2),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _PrimaryButton(
+                  label: 'Добавить',
+                  onPressed: () {
+                    final amount = int.tryParse(amountCtrl.text.replaceAll(' ', '')) ?? 0;
+                    if (titleCtrl.text.isNotEmpty && amount > 0) {
+                      context.read<FinanceProvider>().addTransaction(
+                        titleCtrl.text, amount, isExpense,
+                        isCash: isCash,
+                        category: isExpense ? selectedCategory : TransactionCategory.income,
+                      );
+                      Navigator.pop(ctx);
                     }
                   },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-                    decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Colors.white)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          selectedDate == null 
-                            ? 'Дата списания (опционально)' 
-                            : 'Спишется: ${DateFormat('dd.MM.yyyy').format(selectedDate!)}',
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                        const Icon(Icons.calendar_today, color: Colors.white70, size: 20),
-                      ],
-                    ),
-                  ),
                 ),
-                const SizedBox(height: 16),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Отмена', style: TextStyle(color: Colors.white54)),
-              ),
-              TextButton(
-                onPressed: () {
-                  final amount = int.tryParse(amountController.text);
-                  if (titleController.text.isNotEmpty && amount != null) {
-                    Provider.of<FinanceProvider>(context, listen: false)
-                        .addSubscription(titleController.text, amount, expiryDate: selectedDate);
-                    Navigator.pop(context);
-                  }
-                },
-                child: const Text('Добавить', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        }
+          ),
+        ),
       ),
     );
   }
 
-  void _showDeleteSubscriptionDialog(BuildContext context, Subscription sub) {
-    showDialog(
+  // ── Add Subscription ────────────────────────────────────────────────────────
+  void _showAddSubscriptionDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    DateTime? selectedDate;
+
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: kFinanceTeal,
-        title: Text('Удалить ${sub.name}?', style: const TextStyle(color: Colors.white)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Нет', style: TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () {
-              Provider.of<FinanceProvider>(context, listen: false)
-                  .removeSubscription(sub.id);
-              Navigator.pop(context);
-            },
-            child: const Text('Да', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _showAddCardDialog() {
-    final TextEditingController nameController = TextEditingController();
-    File? selectedImage;
-    String? detectedCode;
-    String? detectedFormat;
-    bool isScanning = false;
-    
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            backgroundColor: kFinanceTeal,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: const BorderSide(color: Colors.white, width: 1)),
-            title: const Text('Добавить карту', style: TextStyle(color: Colors.white)),
-            content: SingleChildScrollView(
-              child: Column(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _DarkSheet(
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: nameController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      hintText: 'Название магазина',
-                      hintStyle: TextStyle(color: Colors.white54),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-                    ),
+                  Text('Новая подписка', style: AppTheme.titleStyle),
+                  const SizedBox(height: 24),
+                  _SheetTextField(controller: nameCtrl, label: 'Сервис', hint: 'Netflix, Spotify...'),
+                  const SizedBox(height: 14),
+                  _SheetTextField(
+                    controller: amountCtrl,
+                    label: 'Сумма в месяц',
+                    hint: '0 ₽',
+                    inputType: TextInputType.number,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
                   GestureDetector(
                     onTap: () async {
-                      try {
-                        final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
-                        if (photo != null) {
-                          setState(() {
-                            selectedImage = File(photo.path);
-                            isScanning = true;
-                            detectedCode = null;
-                            detectedFormat = null;
-                          });
-                          
-                          // Convert XFile to path and analyze
-                          final capture = await _scannerController.analyzeImage(photo.path);
-                          
-                          if (capture != null && capture.barcodes.isNotEmpty) {
-                             final code = capture.barcodes.first;
-                             if (code.rawValue != null) {
-                               setState(() {
-                                 detectedCode = code.rawValue;
-                                 detectedFormat = code.format.name;
-                                 isScanning = false;
-                               });
-                             } else {
-                               setState(() => isScanning = false);
-                             }
-                          } else {
-                             setState(() => isScanning = false);
-                          }
-                        }
-                      } catch (e) {
-                        debugPrint('Error picking image: $e');
-                        setState(() => isScanning = false);
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (date != null) {
+                        setModalState(() => selectedDate = date);
                       }
                     },
                     child: Container(
-                      height: 140,
-                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                        borderRadius: BorderRadius.circular(12),
-                        image: selectedImage != null 
-                          ? DecorationImage(image: FileImage(selectedImage!), fit: BoxFit.cover, opacity: 0.5)
-                          : null,
+                        color: AppTheme.white05,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Row(
                         children: [
-                          if (isScanning)
-                            const CircularProgressIndicator(color: Colors.white)
-                          else if (detectedCode != null)
-                             Column(
-                               children: [
-                                 const Icon(Icons.check_circle, color: Colors.greenAccent, size: 40),
-                                 const SizedBox(height: 8),
-                                 Text('Найден код!', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                 Text(detectedFormat ?? 'QR', style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                               ],
-                             )
-                          else if (selectedImage != null)
-                            const Column(
-                               children: [
-                                 Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 40),
-                                 SizedBox(height: 8),
-                                 Text('Штрих-код не найден', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                               ],
-                             )
-                          else
-                            const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.add_a_photo, color: Colors.white, size: 40),
-                                SizedBox(height: 8),
-                                Text('Загрузить фото / QR', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                              ],
+                          Icon(Icons.calendar_today_rounded, color: AppTheme.white54, size: 20),
+                          const SizedBox(width: 12),
+                          Text(
+                            selectedDate != null ? DateFormat('d MMMM yyyy', 'ru').format(selectedDate!) : 'Дата списания',
+                            style: AppTheme.bodyStyle.copyWith(
+                              color: selectedDate != null ? AppTheme.white : AppTheme.white54,
                             ),
-                          ],
-                        ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Отмена', style: TextStyle(color: Colors.white54)),
-              ),
-              TextButton(
-                onPressed: () {
-                  if (nameController.text.isNotEmpty) {
-                    Provider.of<FinanceProvider>(context, listen: false).addDiscountCard(
-                      nameController.text,
-                      imagePath: selectedImage?.path,
-                      codeData: detectedCode,
-                      codeFormat: detectedFormat,
-                    );
-                    Navigator.pop(context);
-                  }
-                },
-                child: const Text('Добавить', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        }
-      ),
-    );
-  }
-
-  void _showEditCashDialog(BuildContext context) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: kFinanceTeal,
-        title: const Text('Баланс наличных', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            labelText: 'Текущая сумма',
-            labelStyle: TextStyle(color: Colors.white70),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-          ),
-        ),
-        actions: [
-           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена', style: TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () {
-              final val = int.tryParse(controller.text);
-              if (val != null) {
-                Provider.of<FinanceProvider>(context, listen: false).setCashBalance(val);
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Сохранить', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bw.Barcode _getBarcodeType(String? format) {
-    if (format == null) return bw.Barcode.qrCode();
-    switch (format.toLowerCase()) {
-      case 'ean13': return bw.Barcode.ean13();
-      case 'ean8': return bw.Barcode.ean8();
-      case 'upca': return bw.Barcode.upcA();
-      case 'upce': return bw.Barcode.upcE();
-      case 'code128': return bw.Barcode.code128();
-      case 'code39': return bw.Barcode.code39();
-      case 'code93': return bw.Barcode.code93();
-      case 'codabar': return bw.Barcode.codabar();
-      case 'itf': return bw.Barcode.itf();
-      case 'pdf417': return bw.Barcode.pdf417();
-      case 'aztec': return bw.Barcode.aztec();
-      case 'datamatrix': return bw.Barcode.dataMatrix();
-      default: return bw.Barcode.qrCode();
-    }
-  }
-
-  void _showCardDetails(DiscountCard card) {
-    // Determine view mode: Photo or Generated Code
-    bool showPhoto = card.imagePath != null && card.codeData == null; 
-    
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return Dialog(
-            backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                       Expanded(
-                         child: Text(
-                          card.name,
-                          style: AppTheme.headlineStyle.copyWith(color: Colors.black, fontSize: 22),
-                          overflow: TextOverflow.ellipsis,
-                                                 ),
-                       ),
-                      Row(
-                        children: [
-                           if (card.imagePath != null && card.codeData != null)
-                            IconButton(
-                              icon: Icon(showPhoto ? Icons.qr_code : Icons.image, color: Colors.blueGrey),
-                              onPressed: () {
-                                setState(() {
-                                  showPhoto = !showPhoto;
-                                });
-                              },
-                            ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.redAccent),
-                            onPressed: () {
-                              Provider.of<FinanceProvider>(context, listen: false).removeDiscountCard(card.id);
-                              Navigator.pop(context);
-                            },
                           ),
                         ],
-                      )
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  if (showPhoto && card.imagePath != null)
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 300),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          File(card.imagePath!),
-                          fit: BoxFit.contain,
-                        ),
                       ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      color: Colors.white,
-                      height: 200,
-                      width: double.infinity,
-                      child: card.codeData != null
-                        ? bw.BarcodeWidget(
-                            barcode: _getBarcodeType(card.codeFormat),
-                            data: card.codeData!,
-                            color: Colors.black,
-                            drawText: true,
-                          )
-                        : QrImageView(
-                            data: card.name,
-                            version: QrVersions.auto,
-                            size: 200.0,
-                          ),
                     ),
-                    
-                  const SizedBox(height: 20),
-                  Text(
-                    showPhoto ? 'Фото карты' : (card.codeData != null ? 'Скан: ${card.codeData}' : 'QR имя'),
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 28),
+                  _PrimaryButton(
+                    label: 'Добавить',
+                    onPressed: () {
+                      final amount = double.tryParse(amountCtrl.text.replaceAll(' ', '')) ?? 0;
+                      if (nameCtrl.text.isNotEmpty && amount > 0) {
+                        context.read<FinanceProvider>().addSubscription(nameCtrl.text, amount.toInt(), expiryDate: selectedDate);
+                        Navigator.pop(ctx);
+                      }
+                    },
                   ),
                 ],
+              );
+            }
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Add Loyalty Card ────────────────────────────────────────────────────────
+  void _showAddCardDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final codeCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _DarkSheet(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Карта лояльности', style: AppTheme.titleStyle),
+              const SizedBox(height: 24),
+              _SheetTextField(controller: nameCtrl, label: 'Магазин', hint: 'Пятёрочка, Лента...'),
+              const SizedBox(height: 14),
+              _SheetTextField(controller: codeCtrl, label: 'Штрихкод / номер карты', hint: '1234567890'),
+              const SizedBox(height: 28),
+              _PrimaryButton(
+                label: 'Сохранить',
+                onPressed: () {
+                  if (nameCtrl.text.isNotEmpty) {
+                    context.read<FinanceProvider>().addDiscountCard(
+                      nameCtrl.text,
+                      codeData: codeCtrl.text.isEmpty ? null : codeCtrl.text,
+                    );
+                    Navigator.pop(ctx);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Card QR details ─────────────────────────────────────────────────────────
+  void _showCardDetails(BuildContext context, DiscountCard card) {
+    final GlobalKey qrKey = GlobalKey();
+
+    Future<void> shareQr() async {
+      try {
+        final boundary = qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+        if (boundary == null) return;
+        final image = await boundary.toImage(pixelRatio: 3.0);
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) return;
+
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/qr_${card.id}.png');
+        await file.writeAsBytes(byteData.buffer.asUint8List());
+
+        await Share.shareXFiles([XFile(file.path)], text: card.name);
+      } catch (e) {
+        debugPrint('Error sharing QR: $e');
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DarkSheet(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(card.name, style: AppTheme.headlineStyle.copyWith(fontSize: 22)),
+            const SizedBox(height: 28),
+            RepaintBoundary(
+              key: qrKey,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: card.codeData != null
+                    ? bw.BarcodeWidget(
+                        barcode: bw.Barcode.qrCode(),
+                        data: card.codeData!,
+                        width: 200, height: 200,
+                      )
+                    : QrImageView(data: card.name, size: 200, backgroundColor: Colors.white),
               ),
             ),
-          );
-        }
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Закрыть', style: AppTheme.captionStyle.copyWith(color: AppTheme.white54, fontSize: 14)),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: shareQr,
+                  icon: const Icon(Icons.share_rounded, size: 16, color: AppTheme.primaryDark),
+                  label: Text('Поделиться', style: AppTheme.titleStyle.copyWith(color: AppTheme.primaryDark, fontSize: 14)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.accentGold,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -692,472 +359,814 @@ class _FinanceScreenState extends State<FinanceScreen> {
   Widget build(BuildContext context) {
     return Consumer<FinanceProvider>(
       builder: (context, finance, _) {
+        final totalIncome = finance.transactions
+            .where((t) => !t.isExpense)
+            .fold(0.0, (s, t) => s + t.amount);
+        final totalExpense = finance.transactions
+            .where((t) => t.isExpense)
+            .fold(0.0, (s, t) => s + t.amount);
+        final monthlySubscriptions = finance.subscriptions
+            .fold(0.0, (s, sub) => s + sub.amount);
+
         return Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF004D40), // Deep Emerald/Teal
-                  Color(0xFF000000), // Black
-                ],
+          backgroundColor: AppTheme.primaryDark,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Wallpaper
+              Positioned.fill(
+                child: Consumer<UserProvider>(
+                  builder: (_, user, __) =>
+                      Image.asset(user.wallpaperPath, fit: BoxFit.cover),
+                ),
               ),
-            ),
-            child: SingleChildScrollView(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 10,
-              left: 20,
-              right: 20,
-              bottom: 120, // Space for floating nav
-            ),
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Positioned.fill(
+                child: Container(color: Colors.black.withValues(alpha: 0.18)),
+              ),
+
+              SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.screenPadding),
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Финансы',
-                        style: AppTheme.headlineStyle.copyWith(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Total Balance
-                  _GlassCard(
-                    height: 140,
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${finance.balance}р',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 36,
-                              fontWeight: FontWeight.bold,
+                      const SizedBox(height: 20),
+                      Text('Финансы', style: AppTheme.headlineStyle),
+                      const SizedBox(height: 28),
+
+                      MinimalCard(
+                        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+                        child: Column(
+                          children: [
+                            Text(
+                              'БАЛАНС',
+                              style: AppTheme.labelStyle,
                             ),
-                          ),
-                          Text(
-                            'ваш баланс',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 16,
+                            const SizedBox(height: 12),
+                            Text(
+                              _fmtMoney(finance.balance),
+                              style: AppTheme.headlineStyle.copyWith(
+                                fontSize: 42,
+                                letterSpacing: -2,
+                                color: finance.balance >= 0 ? AppTheme.white : AppTheme.errorRed,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  // Cards Split
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _GlassCard(
-                          height: 120,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Align(
-                                alignment: Alignment.topRight,
-                                child: Padding(
-                                  padding: EdgeInsets.only(right: 12, top: 4),
-                                  child: Icon(Icons.credit_card, color: Colors.white, size: 20),
-                                ),
-                              ),
-                              Text(
-                                '${finance.balance}р',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                'карта',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.7),
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _showEditCashDialog(context),
-                          child: _GlassCard(
-                            height: 120,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            const SizedBox(height: 28),
+                            // Income / Expense row
+                            Row(
                               children: [
-                                const Align(
-                                  alignment: Alignment.topRight,
-                                  child: Padding(
-                                    padding: EdgeInsets.only(right: 12, top: 4),
-                                    child: Icon(Icons.money, color: Colors.white, size: 20),
+                                Expanded(
+                                  child: _FlowCell(
+                                    label: 'Доход',
+                                    value: _fmtMoney(totalIncome),
+                                    icon: Icons.arrow_downward_rounded,
+                                    color: AppTheme.accentGreen,
                                   ),
                                 ),
-                                Text(
-                                  '${finance.cashBalance}р',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                                Container(width: 1, height: 40, color: AppTheme.white12),
+                                Expanded(
+                                  child: _FlowCell(
+                                    label: 'Расход',
+                                    value: _fmtMoney(totalExpense),
+                                    icon: Icons.arrow_upward_rounded,
+                                    color: AppTheme.errorRed,
                                   ),
                                 ),
-                                Text(
-                                  'наличные',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                    fontSize: 14,
+                                Container(width: 1, height: 40, color: AppTheme.white12),
+                                Expanded(
+                                  child: _FlowCell(
+                                    label: 'Подписки',
+                                    value: _fmtMoney(monthlySubscriptions),
+                                    icon: Icons.autorenew_rounded,
+                                    color: AppTheme.accentIndigo,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
                               ],
                             ),
-                          ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  const Text(
-                    'Анализ финансов за месяц',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _showIncomeStatsModal(context, finance),
-                          child: _GlassCard(
-                          height: 70,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${finance.monthlyIncome}р',
-                                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                'доходы',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 10),
-                              ),
-                            ],
-                          ),
-                        ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _showExpenseStatsModal(context, finance),
-                          child: _GlassCard(
-                          height: 70,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${finance.monthlyExpenses}р',
-                                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                'расходы',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 10),
-                              ),
-                            ],
-                          ),
-                        ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Подписки',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      GestureDetector(
-                        onTap: () => _showAddSubscriptionDialog(context),
-                        child: const Icon(Icons.add, color: Colors.white, size: 24),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 12),
+                      ).animate().fadeIn(duration: 600.ms).scale(begin: const Offset(0.95, 0.95), curve: Curves.easeOutBack),
 
-                  GridView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 2.2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    itemCount: finance.subscriptions.length,
-                    itemBuilder: (context, index) {
-                      final sub = finance.subscriptions[index];
-                      return GestureDetector(
-                        onLongPress: () => _showDeleteSubscriptionDialog(context, sub),
-                        child: _GlassCard(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                sub.name,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                '${sub.amount}р/мес',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
-                              ),
-                              if (sub.expiryDate != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    'Спишется ${DateFormat('dd.MM').format(sub.expiryDate!)}',
-                                    style: const TextStyle(color: Colors.orangeAccent, fontSize: 10),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'История',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      GestureDetector(
-                        onTap: () => _showAddTransactionDialog(context),
-                        child: Text(
-                          'добавить',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  if (finance.transactions.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'История пуста',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-                      ),
-                    )
-                  else
-                    ...finance.transactions.map((item) => Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      const SizedBox(height: 20),
+
+                      // ── Card & Cash mini row ───────────────────────────────
+                      Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              item.title,
-                              style: const TextStyle(color: Colors.white, fontSize: 13),
-                            ),
+                            child: _MiniStatCard(
+                              title: 'Карта',
+                              value: _fmtMoney(finance.balance),
+                              icon: Icons.credit_card_rounded,
+                              color: AppTheme.accentBlue,
+                            ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideX(begin: -0.1),
                           ),
-                          Text(
-                            '${item.isExpense ? "-" : "+"}${item.amount}р',
-                            style: TextStyle(
-                              color: item.isExpense ? Colors.redAccent : Colors.greenAccent,
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: _MiniStatCard(
+                              title: 'Наличные',
+                              value: _fmtMoney(finance.cashBalance),
+                              icon: Icons.payments_rounded,
+                              color: AppTheme.accentGreen,
+                            ).animate().fadeIn(duration: 400.ms, delay: 300.ms).slideX(begin: 0.1),
                           ),
                         ],
                       ),
-                    )),
-                  
-                  const SizedBox(height: 24),
-                  
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Дисконт карты',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+
+                      const SizedBox(height: 32),
+
+                      // ── Spending Analytics ────────────────────────────────
+                      if (finance.monthlyExpensesByCategory.isNotEmpty) ...[
+                        _SectionHeader(
+                          title: 'Расходы за месяц',
+                          onAdd: () => _showBudgetDialog(context),
+                          addIcon: Icons.tune_rounded,
+                        ),
+                        const SizedBox(height: 12),
+                        MinimalCard(
+                          padding: const EdgeInsets.all(20),
+                          child: _SpendingChart(
+                            data: finance.monthlyExpensesByCategory,
+                            totalExpenses: finance.monthlyExpenses,
+                            monthlyBudget: finance.monthlyBudget,
+                          ),
+                        ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
+                        const SizedBox(height: 32),
+                      ],
+
+                      // ── Transactions ──────────────────────────────────────
+                      _SectionHeader(
+                        title: 'Транзакции',
+                        onAdd: () => _showAddTransactionDialog(context),
                       ),
-                      GestureDetector(
-                        onTap: _showAddCardDialog,
-                        child: const Icon(Icons.add, color: Colors.white, size: 24),
+                      const SizedBox(height: 12),
+
+                      if (finance.transactions.isEmpty)
+                        _EmptyHint(label: 'Добавьте первую транзакцию')
+                      else
+                        MinimalCard(
+                          padding: EdgeInsets.zero,
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: finance.transactions.take(8).length,
+                            separatorBuilder: (_, __) => const _CardDivider(),
+                            itemBuilder: (_, i) {
+                              final t = finance.transactions[i];
+                              return Dismissible(
+                                key: Key(t.id),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  color: AppTheme.errorRed.withValues(alpha: 0.15),
+                                  child: const Icon(Icons.delete_rounded, color: AppTheme.errorRed, size: 22),
+                                ),
+                                onDismissed: (_) {
+                                  HapticFeedback.mediumImpact();
+                                  context.read<FinanceProvider>().deleteTransaction(t.id);
+                                },
+                                child: _TransactionRow(transaction: t)
+                                  .animate()
+                                  .fadeIn(duration: 300.ms, delay: (i * 40).ms)
+                                  .slideX(begin: 0.05),
+                              );
+                            },
+                          ),
+                        ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Subscriptions ─────────────────────────────────────
+                      _SectionHeader(
+                        title: 'Подписки',
+                        onAdd: () => _showAddSubscriptionDialog(context),
                       ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 4),
-                  
-                  GridView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 2.0,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    itemCount: finance.discountCards.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index < finance.discountCards.length) {
-                        final card = finance.discountCards[index];
-                        return GestureDetector(
-                          onTap: () => _showCardDetails(card),
-                          child: _GlassCard(
-                            padding: const EdgeInsets.all(0),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                if (card.imagePath != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(24),
-                                    child: Image.file(
-                                      File(card.imagePath!),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return const Center(child: Icon(Icons.broken_image, color: Colors.white));
-                                      },
-                                    ),
+                      const SizedBox(height: 12),
+
+                      if (finance.subscriptions.isEmpty)
+                        _EmptyHint(label: 'Нет активных подписок')
+                      else
+                        MinimalCard(
+                          padding: EdgeInsets.zero,
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: finance.subscriptions.length,
+                            separatorBuilder: (_, __) => const _CardDivider(),
+                            itemBuilder: (_, i) =>
+                                _SubscriptionRow(subscription: finance.subscriptions[i])
+                                .animate()
+                                .fadeIn(duration: 300.ms, delay: (i * 50).ms)
+                                .slideX(begin: 0.05),
+                          ),
+                        ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Loyalty Cards ─────────────────────────────────────
+                      _SectionHeader(
+                        title: 'Карты лояльности',
+                        onAdd: () => _showAddCardDialog(context),
+                        addIcon: Icons.add_card_rounded,
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (finance.discountCards.isEmpty)
+                        _EmptyHint(label: 'Добавьте карту магазина')
+                      else
+                        SizedBox(
+                          height: 108,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: finance.discountCards.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 12),
+                            itemBuilder: (_, i) {
+                              final card = finance.discountCards[i];
+                              return GestureDetector(
+                                onTap: () => _showCardDetails(context, card),
+                                child: Container(
+                                  width: 150,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.white08,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppTheme.white12),
                                   ),
-                                if (card.imagePath != null)
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(24),
-                                      color: Colors.black.withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                Center(
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.all(14),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
+                                      const Icon(Icons.qr_code_rounded, color: AppTheme.white38, size: 28),
+                                      const SizedBox(height: 8),
                                       Text(
                                         card.name,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
-                                        ),
+                                        style: AppTheme.titleStyle.copyWith(fontSize: 14),
                                         textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      if (card.codeData != null)
-                                        const Padding(
-                                          padding: EdgeInsets.only(top: 4),
-                                          child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 14),
-                                        )
                                     ],
                                   ),
                                 ),
-                              ],
-                            ),
+                              );
+                            },
                           ),
-                        );
-                      } else {
-                        return GestureDetector(
-                          onTap: _showAddCardDialog,
-                          child: _GlassCard(
-                            padding: const EdgeInsets.all(0),
-                            child: const Center(
-                              child: Icon(Icons.add, color: Colors.white, size: 24),
-                            ),
-                          ),
-                        );
-                      }
-                    },
+                        ),
+
+                      const SizedBox(height: 120),
+                    ],
                   ),
-                ],
+                ),
               ),
-              ),
+            ],
           ),
         );
-    },
-  );
-}
+      },
+    );
+  }
 }
 
-class _GlassCard extends StatelessWidget {
-  final Widget child;
-  final double? height;
-  final EdgeInsetsGeometry? padding;
+// ── Local components ──────────────────────────────────────────────────────────
 
-  const _GlassCard({
-    required this.child,
-    this.height,
-    this.padding,
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback onAdd;
+  final IconData addIcon;
+
+  const _SectionHeader({
+    required this.title,
+    required this.onAdd,
+    this.addIcon = Icons.add_circle_outline_rounded,
   });
 
   @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title, style: AppTheme.titleStyle),
+        GestureDetector(
+          onTap: onAdd,
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.white08,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(addIcon, color: AppTheme.white70, size: 18),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FlowCell extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _FlowCell({required this.label, required this.value, required this.icon, required this.color});
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25), // Strong blur for matte effect
-        child: Container(
-          height: height,
-          padding: padding,
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
-            color: const Color(0xFF000000).withValues(alpha: 0.15), // Very light matte black
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.12), // Subtle bright border
-              width: 1,
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 14),
+        ),
+        const SizedBox(height: 8),
+        Text(value, style: AppTheme.titleStyle.copyWith(fontSize: 13), textAlign: TextAlign.center),
+        const SizedBox(height: 2),
+        Text(label, style: AppTheme.captionStyle.copyWith(fontSize: 10), textAlign: TextAlign.center),
+      ],
+    );
+  }
+}
+
+class _MiniStatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _MiniStatCard({required this.title, required this.value, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return MinimalCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(height: 14),
+          Text(value, style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+          const SizedBox(height: 3),
+          Text(title, style: AppTheme.captionStyle),
+        ],
+      ),
+    );
+  }
+}
+
+class _TransactionRow extends StatelessWidget {
+  final Transaction transaction;
+  const _TransactionRow({required this.transaction});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = transaction.isExpense ? AppTheme.errorRed : AppTheme.accentGreen;
+    final sign = transaction.isExpense ? '−' : '+';
+    final fmt = NumberFormat('#,###', 'ru_RU');
+    final cat = transaction.category;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: cat.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(cat.icon, color: cat.color, size: 16),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(transaction.title, style: AppTheme.bodyStyle.copyWith(color: AppTheme.white, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      DateFormat('d MMM', 'ru').format(transaction.date),
+                      style: AppTheme.captionStyle.copyWith(fontSize: 11),
+                    ),
+                    if (transaction.isExpense) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: cat.color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(cat.label, style: AppTheme.captionStyle.copyWith(fontSize: 10, color: cat.color)),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
-          child: child,
+          Text(
+            '$sign${fmt.format(transaction.amount)} ₽',
+            style: AppTheme.titleStyle.copyWith(color: color, fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubscriptionRow extends StatelessWidget {
+  final Subscription subscription;
+  const _SubscriptionRow({required this.subscription});
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat('#,###', 'ru_RU');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: AppTheme.accentIndigo.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.autorenew_rounded, color: AppTheme.accentIndigo, size: 16),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(subscription.name, style: AppTheme.bodyStyle.copyWith(color: AppTheme.white, fontWeight: FontWeight.w500)),
+                if (subscription.expiryDate != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Списание ${DateFormat('d MMM', 'ru').format(subscription.expiryDate!)}',
+                    style: AppTheme.captionStyle.copyWith(fontSize: 11),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Text(
+            '−${fmt.format(subscription.amount)} ₽',
+            style: AppTheme.titleStyle.copyWith(color: AppTheme.white70, fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyHint extends StatelessWidget {
+  final String label;
+  const _EmptyHint({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return MinimalCard(
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+      child: Center(
+        child: Text(label, style: AppTheme.captionStyle.copyWith(fontSize: 13)),
+      ),
+    );
+  }
+}
+
+class _CardDivider extends StatelessWidget {
+  const _CardDivider();
+  @override
+  Widget build(BuildContext context) {
+    return Divider(height: 1, thickness: 0.6, color: Colors.white.withValues(alpha: 0.07), indent: 18, endIndent: 18);
+  }
+}
+
+class _TypeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _TypeChip({required this.label, required this.icon, required this.selected, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.15) : AppTheme.white08,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? color.withValues(alpha: 0.4) : Colors.transparent),
         ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: selected ? color : AppTheme.white38, size: 16),
+            const SizedBox(width: 8),
+            Text(label, style: AppTheme.bodyStyle.copyWith(color: selected ? color : AppTheme.white38, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DarkSheet extends StatelessWidget {
+  final Widget child;
+  const _DarkSheet({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF13131F),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(color: AppTheme.white12, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Budget Dialog ─────────────────────────────────────────────────────────────
+
+extension on _FinanceScreenState {
+  void _showBudgetDialog(BuildContext context) {
+    final ctrl = TextEditingController(
+      text: context.read<FinanceProvider>().monthlyBudget > 0
+          ? context.read<FinanceProvider>().monthlyBudget.toString()
+          : '',
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _DarkSheet(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Бюджет на месяц', style: AppTheme.titleStyle),
+              const SizedBox(height: 8),
+              Text('Установите лимит расходов, чтобы не выходить за рамки', style: AppTheme.captionStyle),
+              const SizedBox(height: 20),
+              _SheetTextField(
+                controller: ctrl,
+                label: 'Лимит (₽)',
+                hint: '50000',
+                inputType: const TextInputType.numberWithOptions(decimal: false),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 24),
+              _PrimaryButton(
+                label: 'Сохранить',
+                onPressed: () {
+                  final val = int.tryParse(ctrl.text) ?? 0;
+                  context.read<FinanceProvider>().setMonthlyBudget(val);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Spending Pie Chart ────────────────────────────────────────────────────────
+
+class _SpendingChart extends StatelessWidget {
+  final Map<TransactionCategory, int> data;
+  final int totalExpenses;
+  final int monthlyBudget;
+
+  const _SpendingChart({
+    required this.data,
+    required this.totalExpenses,
+    required this.monthlyBudget,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat('#,###', 'ru_RU');
+    final total = data.values.fold<int>(0, (s, v) => s + v);
+    if (total == 0) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: CustomPaint(
+                painter: _PieChartPainter(data: data, total: total),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${fmt.format(totalExpenses)}₽',
+                        style: AppTheme.titleStyle.copyWith(fontSize: 13)),
+                      Text('расходы', style: AppTheme.captionStyle.copyWith(fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...data.entries.map((e) {
+                    final pct = (e.value / total * 100).toInt();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Container(width: 8, height: 8, decoration: BoxDecoration(
+                            color: e.key.color, shape: BoxShape.circle)),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(e.key.label,
+                            style: AppTheme.captionStyle.copyWith(fontSize: 11),
+                            overflow: TextOverflow.ellipsis)),
+                          Text('$pct%', style: AppTheme.captionStyle.copyWith(
+                            fontSize: 11, color: AppTheme.white70, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (monthlyBudget > 0) ...[
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Бюджет', style: AppTheme.captionStyle),
+              Text('${fmt.format(totalExpenses)} / ${fmt.format(monthlyBudget)} ₽',
+                style: AppTheme.captionStyle.copyWith(
+                  color: totalExpenses > monthlyBudget ? AppTheme.errorRed : AppTheme.white70,
+                  fontWeight: FontWeight.w600,
+                )),
+            ],
+          ),
+          const SizedBox(height: 6),
+          LayoutBuilder(
+            builder: (_, c) => Stack(
+              children: [
+                Container(height: 6, width: c.maxWidth, decoration: BoxDecoration(
+                  color: AppTheme.white08, borderRadius: BorderRadius.circular(3))),
+                Container(
+                  height: 6,
+                  width: c.maxWidth * (totalExpenses / monthlyBudget).clamp(0.0, 1.0),
+                  decoration: BoxDecoration(
+                    color: totalExpenses > monthlyBudget ? AppTheme.errorRed : AppTheme.accentGreen,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PieChartPainter extends CustomPainter {
+  final Map<TransactionCategory, int> data;
+  final int total;
+
+  _PieChartPainter({required this.data, required this.total});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    double startAngle = -pi / 2;
+
+    for (final entry in data.entries) {
+      final sweepAngle = 2 * pi * entry.value / total;
+      final paint = Paint()
+        ..color = entry.key.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 14
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius - 7),
+        startAngle + 0.04,
+        sweepAngle - 0.08,
+        false,
+        paint,
+      );
+      startAngle += sweepAngle;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PieChartPainter oldDelegate) => oldDelegate.data != data;
+}
+
+class _SheetTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final TextInputType inputType;
+  final List<TextInputFormatter>? inputFormatters;
+
+  const _SheetTextField({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    this.inputType = TextInputType.text,
+    this.inputFormatters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTheme.captionStyle.copyWith(fontSize: 12, color: AppTheme.white54)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: inputType,
+          inputFormatters: inputFormatters,
+          style: AppTheme.bodyStyle.copyWith(color: AppTheme.white),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: AppTheme.captionStyle.copyWith(fontSize: 14),
+            filled: true,
+            fillColor: AppTheme.white08,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _PrimaryButton({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        ),
+        child: Text(label, style: AppTheme.buttonTextStyle),
       ),
     );
   }

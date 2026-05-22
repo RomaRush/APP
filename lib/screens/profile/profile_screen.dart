@@ -1,399 +1,256 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import '../../core/providers/user_provider.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/l10n/app_localizations.dart';
+import '../../core/providers/user_provider.dart';
 import '../home/story_view_screen.dart';
 import 'achievements_screen.dart';
 import '../../core/models/story_entry.dart';
+import '../stats/stats_screen.dart';
+import '../../core/l10n/app_localizations.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  Future<void> _scanQRFromGallery(BuildContext context) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    final scanner = MobileScannerController();
+    try {
+      final BarcodeCapture? capture = await scanner.analyzeImage(image.path);
+      if (capture != null && capture.barcodes.isNotEmpty) {
+        final code = capture.barcodes.first.rawValue;
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF13131F),
+              title: const Text('QR-код найден', style: TextStyle(color: Colors.white)),
+              content: SelectableText(code ?? 'Пусто', style: const TextStyle(color: Colors.white70)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Закрыть', style: TextStyle(color: AppTheme.accentBlue)),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('QR-код не обнаружен на фото')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сканирования: $e')),
+        );
+      }
+    } finally {
+      scanner.dispose();
+    }
+  }
+
   Future<void> _pickAvatar(BuildContext context) async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
+    if (image != null && context.mounted) {
       context.read<UserProvider>().setAvatar(image.path);
     }
   }
 
   void _editProfile(BuildContext context, UserProvider user) {
-    // Only localized briefly for the dialog, ideally passed in
-    final l10n = AppLocalizations.of(context);
     final nameController = TextEditingController(text: user.name);
     final subtitleController = TextEditingController(text: user.subtitle);
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        title: Text(l10n.get('edit_profile'), style: const TextStyle(color: Colors.black)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              style: const TextStyle(color: Colors.black),
-              decoration: InputDecoration(
-                labelText: l10n.get('name'),
-                labelStyle: const TextStyle(color: Colors.grey),
-                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
-                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.black)),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _DarkSheet(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Редактировать', style: AppTheme.headlineStyle.copyWith(fontSize: 22)),
+              const SizedBox(height: 24),
+              _ModalTextField(controller: nameController, label: 'Имя'),
+              const SizedBox(height: 14),
+              _ModalTextField(controller: subtitleController, label: 'Описание'),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: () {
+                    context.read<UserProvider>().updateProfile(nameController.text, subtitleController.text);
+                    Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.white,
+                    foregroundColor: Colors.black,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  ),
+                  child: Text('Сохранить', style: AppTheme.buttonTextStyle),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: subtitleController,
-              style: const TextStyle(color: Colors.black),
-              decoration: InputDecoration(
-                labelText: l10n.get('description'),
-                labelStyle: const TextStyle(color: Colors.grey),
-                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
-                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.black)),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.get('cancel'), style: const TextStyle(color: Colors.red)),
-          ),
-          TextButton(
-            onPressed: () {
-              context.read<UserProvider>().updateProfile(
-                nameController.text,
-                subtitleController.text,
-              );
-              Navigator.pop(context);
-            },
-            child: Text(l10n.get('save'), style: const TextStyle(color: Colors.blue)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openStory(BuildContext context, List<StoryEntry> stories, int index) {
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, _, __) => StoryViewScreen(stories: stories, initialIndex: index),
-        opaque: false,
-        transitionsBuilder: (context, animation, _, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
       ),
     );
   }
 
   void _showSettingsModal(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final userProvider = context.read<UserProvider>();
-
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildSettingsTile(icon: Icons.palette_outlined, title: l10n.get('settings_theme')),
-                  _buildSettingsTile(icon: Icons.app_settings_alt_outlined, title: l10n.get('settings_icon')),
-                  
-                  // Notifications Switch
-                  Consumer<UserProvider>(
-                    builder: (context, user, _) {
-                      return SwitchListTile(
-                        secondary: const Icon(Icons.notifications_none_outlined, color: Colors.black),
-                        title: Text(
-                          l10n.get('settings_notifications'),
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black),
-                        ),
-                        value: user.notificationsEnabled,
-                        onChanged: (val) {
-                          user.toggleNotifications(val);
-                        },
-                        activeColor: Colors.black,
-                      );
-                    },
-                  ),
-
-                  _buildSettingsTile(icon: Icons.star_border, title: l10n.get('settings_rate')),
-                  _buildSettingsTile(icon: Icons.support_agent, title: l10n.get('settings_contact')),
-                  
-                  // Language Selector
-                  ListTile(
-                    leading: const Icon(Icons.language, color: Colors.black),
-                    title: Text(
-                      l10n.get('settings_language'),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black),
-                    ),
-                    trailing: DropdownButtonHideUnderline(
-                      child: DropdownButton<Locale>(
-                        value: userProvider.appLocale,
-                        dropdownColor: Colors.white,
-                        items: const [
-                          DropdownMenuItem(value: Locale('en'), child: Text('English')),
-                          DropdownMenuItem(value: Locale('ru'), child: Text('Русский')),
-                        ],
-                        onChanged: (Locale? newLocale) {
-                          if (newLocale != null) {
-                            userProvider.changeLanguage(newLocale);
-                            Navigator.pop(context); // Close to refresh modal or just let Provider rebuild
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-
-                  const Divider(height: 24),
-                  _buildSettingsTile(
-                    icon: Icons.logout,
-                    title: l10n.get('settings_logout'),
-                    color: Colors.red,
-                    onTap: () {
-                      Navigator.pop(context); 
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildSettingsTile({required IconData icon, required String title, Color color = Colors.black, VoidCallback? onTap}) {
-    return ListTile(
-      leading: Icon(icon, color: color),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          color: color,
-        ),
-      ),
-      onTap: onTap ?? () {},
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color kProfileBrown = const Color(0xffA68069); 
-    final l10n = AppLocalizations.of(context);
-
-    return Scaffold(
-      backgroundColor: kProfileBrown,
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DarkSheet(
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Section
-            SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.settings, color: Colors.white),
-                          onPressed: () => _showSettingsModal(context),
-                        ),
-                      ],
-                    ),
-                    
-                    Consumer<UserProvider>(
-                      builder: (context, user, _) {
-                        return Column(
-                          children: [
-                            GestureDetector(
-                              onTap: () => _pickAvatar(context),
-                              child: Container(
-                                width: 100,
-                                height: 100,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 3),
-                                  image: DecorationImage(
-                                    image: user.avatarPath != null
-                                        ? FileImage(File(user.avatarPath!))
-                                        : const AssetImage('assets/images/user_avatar.png') as ImageProvider,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              user.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              user.subtitle,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            // Unified Edit Button
-                            GestureDetector(
-                              onTap: () => _editProfile(context, user),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
-                                ),
-                                child: Text(
-                                  l10n.get('edit_profile'), // Localized
-                                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
+            Text('Настройки', style: AppTheme.titleStyle),
+            const SizedBox(height: 16),
+            _SettingsTile(icon: Icons.palette_outlined, title: 'Обои', onTap: () {
+              Navigator.pop(ctx);
+              _showWallpaperPicker(context);
+            }),
+            Consumer<UserProvider>(
+              builder: (context, user, _) => SwitchListTile(
+                secondary: const Icon(Icons.notifications_none_outlined, color: AppTheme.white70),
+                title: Text(AppLocalizations.of(context).get('settings_notifications'), style: AppTheme.bodyStyle.copyWith(color: AppTheme.white)),
+                value: user.notificationsEnabled,
+                onChanged: (val) => user.toggleNotifications(val),
+                activeTrackColor: AppTheme.accentGreen,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 0),
               ),
             ),
-            
-            Container(
-              constraints: BoxConstraints(
-                minHeight: MediaQuery.of(context).size.height - 300,
-              ),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
-                ),
-              ),
-              padding: const EdgeInsets.all(24),
-              child: Consumer<UserProvider>(
-                builder: (context, user, _) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildStatItem('${user.storyImages.length}', l10n.get('story_days')),
-                          _buildDivider(),
-                          _buildStatItem('${user.friendsCount}', l10n.get('friends')),
-                          _buildDivider(),
-                          GestureDetector(
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AchievementsScreen())),
-                            child: _buildStatItem('${user.achievementsCount}', l10n.get('achievements')),
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      const Divider(color: Color(0xFFEEEEEE)),
-                      const SizedBox(height: 24),
-                      
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            l10n.get('story_days'),
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
+            _SettingsTile(icon: Icons.language_rounded, title: AppLocalizations.of(context).get('settings_language'), onTap: () {
+              Navigator.pop(ctx);
+              _showLanguagePicker(context);
+            }),
+            _SettingsTile(icon: Icons.star_border_rounded, title: AppLocalizations.of(context).get('settings_rate')),
+            _SettingsTile(icon: Icons.support_agent_rounded, title: 'Поддержка'),
+            _SettingsTile(icon: Icons.qr_code_scanner_rounded, title: 'Сканировать QR с фото', onTap: () {
+              Navigator.pop(ctx);
+              _scanQRFromGallery(context);
+            }),
+            const Divider(height: 24, color: AppTheme.white12),
+            _SettingsTile(
+              icon: Icons.logout_rounded, title: AppLocalizations.of(context).get('settings_logout'),
+              color: AppTheme.errorRed, onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showLanguagePicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DarkSheet(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Язык приложения', style: AppTheme.titleStyle),
+            const SizedBox(height: 16),
+            Consumer<UserProvider>(
+              builder: (context, user, _) {
+                final currentLang = user.appLocale.languageCode;
+                return Column(
+                  children: [
+                    _LangTile(title: 'Русский', code: 'ru', isSelected: currentLang == 'ru',
+                        onTap: () { context.read<UserProvider>().setAppLocale('ru'); Navigator.pop(ctx); }),
+                    _LangTile(title: 'English', code: 'en', isSelected: currentLang == 'en',
+                        onTap: () { context.read<UserProvider>().setAppLocale('en'); Navigator.pop(ctx); }),
+                    _LangTile(title: '中文 (Chinese)', code: 'zh', isSelected: currentLang == 'zh',
+                        onTap: () { context.read<UserProvider>().setAppLocale('zh'); Navigator.pop(ctx); }),
+                  ],
+                );
+              }
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWallpaperPicker(BuildContext context) {
+    final wallpapers = [
+      'assets/images/home_bg_dark.png',
+      'assets/images/wallpapers/IMG_0062.jpeg',
+      'assets/images/wallpapers/IMG_0063.jpeg',
+      'assets/images/wallpapers/IMG_0064.jpeg',
+      'assets/images/wallpapers/IMG_0065.jpeg',
+      'assets/images/wallpapers/IMG_0066.jpeg',
+    ];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DarkSheet(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Обои', style: AppTheme.titleStyle),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 150,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: wallpapers.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final wp = wallpapers[index];
+                  return Consumer<UserProvider>(
+                    builder: (context, user, _) {
+                      final isSelected = user.wallpaperPath == wp;
+                      return GestureDetector(
+                        onTap: () {
+                          context.read<UserProvider>().setWallpaper(wp);
+                          Navigator.pop(ctx);
+                        },
+                        child: AnimatedContainer(
+                          duration: 200.ms,
+                          width: 96,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: isSelected ? AppTheme.accentIndigo : AppTheme.white12,
+                              width: isSelected ? 2.5 : 1,
                             ),
+                            image: DecorationImage(image: AssetImage(wp), fit: BoxFit.cover),
                           ),
-                          if (user.storyImages.isNotEmpty)
-                            Text(
-                              l10n.get('expand'),
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.black.withValues(alpha: 0.5),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      if (user.storyImages.isEmpty)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(20.0),
-                            child: Text(
-                              l10n.get('no_stories'), // Localized
-                              style: TextStyle(color: Colors.grey[400]),
-                            ),
-                          ),
-                        )
-                      else
-                        GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 4,
-                            mainAxisSpacing: 4,
-                          ),
-                          itemCount: user.storyImages.length,
-                          itemBuilder: (context, index) {
-                            return GestureDetector(
-                              onTap: () => _openStory(context, user.storyImages, index),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  image: DecorationImage(
-                                    image: FileImage(user.storyImages[index].file),
-                                    fit: BoxFit.cover,
+                          child: isSelected
+                              ? Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    color: AppTheme.accentIndigo.withValues(alpha: 0.35),
                                   ),
-                                ),
-                              ),
-                            );
-                          },
+                                  child: const Center(child: Icon(Icons.check_rounded, color: Colors.white, size: 30)),
+                                )
+                              : null,
                         ),
-                      
-                      const SizedBox(height: 40),
-                    ],
+                      );
+                    },
                   );
                 },
               ),
@@ -404,35 +261,370 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatItem(String count, String label) {
-    return Column(
-      children: [
-        Text(
-          count,
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF333333),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.black.withValues(alpha: 0.6),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+  void _openStory(BuildContext context, List<StoryEntry> stories, int index) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, _, __) => StoryViewScreen(stories: stories, initialIndex: index),
+        opaque: false,
+        transitionsBuilder: (context, animation, _, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
     );
   }
 
-  Widget _buildDivider() {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.primaryDark,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: Consumer<UserProvider>(
+              builder: (context, user, _) => Image.asset(user.wallpaperPath, fit: BoxFit.cover),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x70000000), Color(0x20000000), Color(0xFF080810)],
+                  stops: [0.0, 0.3, 0.72],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios_rounded, color: AppTheme.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.settings_outlined, color: AppTheme.white),
+                          onPressed: () => _showSettingsModal(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Consumer<UserProvider>(
+                    builder: (context, user, _) {
+                      return Column(
+                        children: [
+                          GestureDetector(
+                            onTap: () => _pickAvatar(context),
+                            child: Hero(
+                              tag: 'profile_avatar',
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    width: 104, height: 104,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: AppTheme.white.withValues(alpha: 0.25), width: 2),
+                                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 8))],
+                                      image: DecorationImage(
+                                        image: user.avatarPath != null
+                                            ? FileImage(File(user.avatarPath!)) as ImageProvider
+                                            : const AssetImage('assets/images/user_avatar.png'),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 2, right: 2,
+                                    child: Container(
+                                      width: 28, height: 28,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: AppTheme.accentIndigo,
+                                        border: Border.all(color: AppTheme.primaryDark, width: 2),
+                                      ),
+                                      child: const Icon(Icons.edit_rounded, size: 13, color: Colors.white),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: -6, left: -6,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.1),
+                                                blurRadius: 4,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.star_rounded, size: 15, color: Colors.white),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '${user.userPoints}',
+                                                style: const TextStyle(
+                                                  color: Colors.white, 
+                                                  fontSize: 13, 
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ).animate().fadeIn(duration: 500.ms).scale(begin: const Offset(0.9, 0.9)),
+                          const SizedBox(height: 16),
+                          Text(user.name, style: AppTheme.headlineStyle.copyWith(fontSize: 26))
+                              .animate().fadeIn(duration: 400.ms, delay: 100.ms),
+                          const SizedBox(height: 4),
+                          Text(user.subtitle, style: AppTheme.captionStyle.copyWith(fontSize: 13))
+                              .animate().fadeIn(duration: 400.ms, delay: 150.ms),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              GestureDetector(
+                                onTap: () => _editProfile(context, user),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.white08,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppTheme.white12),
+                                  ),
+                                  child: Text('Редактировать', style: AppTheme.captionStyle.copyWith(color: AppTheme.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              GestureDetector(
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StatsScreen())),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.white08,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppTheme.white12),
+                                  ),
+                                  child: Text('Статистика', style: AppTheme.captionStyle.copyWith(color: AppTheme.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                            ],
+                          ).animate().fadeIn(duration: 400.ms, delay: 200.ms),
+                          const SizedBox(height: 36),
+                        ],
+                      );
+                    },
+                  ),
+                  // Content pane
+                  Container(
+                    constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.55),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF080810),
+                      borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+                    ),
+                    child: Consumer<UserProvider>(
+                      builder: (context, user, _) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 32, 24, 120),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(child: _StatCell(value: '${user.storyImages.length}', label: 'Дней')),
+                                  Container(width: 1, height: 40, color: AppTheme.white12),
+                                  Expanded(child: _StatCell(value: '${user.friendsCount}', label: 'Друзей')),
+                                  Container(width: 1, height: 40, color: AppTheme.white12),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen())),
+                                      child: _StatCell(value: '${user.achievementsCount}', label: 'Достижений'),
+                                    ),
+                                  ),
+                                ],
+                              ).animate().fadeIn(duration: 400.ms, delay: 300.ms),
+                              const SizedBox(height: 36),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Дни', style: AppTheme.titleStyle),
+                                  if (user.storyImages.isNotEmpty)
+                                    Text('Все →', style: AppTheme.captionStyle.copyWith(color: AppTheme.accentIndigo, fontSize: 13)),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              if (user.storyImages.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 40),
+                                  child: Center(
+                                    child: Column(children: [
+                                      Icon(Icons.photo_library_outlined, size: 48, color: AppTheme.white12),
+                                      const SizedBox(height: 12),
+                                      Text('Здесь будут твои моменты', style: AppTheme.captionStyle),
+                                    ]),
+                                  ),
+                                )
+                              else
+                                GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4,
+                                  ),
+                                  itemCount: user.storyImages.length,
+                                  itemBuilder: (context, index) {
+                                    return GestureDetector(
+                                      onTap: () => _openStory(context, user.storyImages, index),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(index == 0 ? 16 : 8),
+                                        child: Image.file(user.storyImages[index].file, fit: BoxFit.cover),
+                                      ),
+                                    );
+                                  },
+                                ).animate().fadeIn(duration: 400.ms, delay: 400.ms),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Local helpers ─────────────────────────────────────────────────────────────
+
+class _DarkSheet extends StatelessWidget {
+  final Widget child;
+  const _DarkSheet({required this.child});
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      height: 30,
-      width: 1,
-      color: Colors.black.withValues(alpha: 0.1),
+      decoration: const BoxDecoration(
+        color: Color(0xFF13131F),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(color: AppTheme.white12, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCell extends StatelessWidget {
+  final String value;
+  final String label;
+  const _StatCell({required this.value, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Text(value, style: AppTheme.headlineStyle.copyWith(fontSize: 22)),
+      const SizedBox(height: 2),
+      Text(label, style: AppTheme.captionStyle.copyWith(fontSize: 11)),
+    ]);
+  }
+}
+
+class _ModalTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  const _ModalTextField({required this.controller, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      style: AppTheme.bodyStyle.copyWith(color: AppTheme.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: AppTheme.captionStyle.copyWith(fontSize: 13),
+        filled: true,
+        fillColor: AppTheme.white08,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Color color;
+  final VoidCallback? onTap;
+  const _SettingsTile({required this.icon, required this.title, this.color = AppTheme.white, this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: color, size: 22),
+      title: Text(title, style: AppTheme.bodyStyle.copyWith(color: color, fontWeight: FontWeight.w500)),
+      onTap: onTap ?? () {},
+      contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
+      trailing: Icon(Icons.chevron_right_rounded, color: AppTheme.white38, size: 20),
+    );
+  }
+}
+
+class _LangTile extends StatelessWidget {
+  final String title;
+  final String code;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _LangTile({required this.title, required this.code, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(title, style: AppTheme.bodyStyle.copyWith(
+        color: isSelected ? AppTheme.accentIndigo : AppTheme.white,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      )),
+      trailing: isSelected ? const Icon(Icons.check_rounded, color: AppTheme.accentIndigo) : null,
+      onTap: onTap,
+      contentPadding: EdgeInsets.zero,
     );
   }
 }

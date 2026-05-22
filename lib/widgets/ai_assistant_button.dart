@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../core/theme/app_theme.dart';
+import 'ai_chat_sheet.dart';
 
 class AiAssistantButton extends StatefulWidget {
   final VoidCallback? onTap;
@@ -17,13 +18,23 @@ class AiAssistantButton extends StatefulWidget {
 class _AiAssistantButtonState extends State<AiAssistantButton> {
   bool _isPressed = false;
 
+  void _openChatSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const AIChatSheet(),
+    );
+    widget.onTap?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) {
         setState(() => _isPressed = false);
-        widget.onTap?.call();
+        _openChatSheet();
       },
       onTapCancel: () => setState(() => _isPressed = false),
       child: AnimatedScale(
@@ -43,6 +54,13 @@ class _AiAssistantButtonState extends State<AiAssistantButton> {
                 offset: const Offset(0, 6),
               ),
             ],
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              color: AppTheme.primaryDark,
+              size: 32,
+            ),
           ),
         ),
       ),

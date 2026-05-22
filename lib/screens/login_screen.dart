@@ -1,144 +1,196 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/constants/app_strings.dart';
-import '../widgets/custom_button.dart';
-import '../widgets/animated_bottom_sheet.dart';
+import '../core/providers/user_provider.dart';
 import 'registration_screen.dart';
+import 'main_screen.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final size = MediaQuery.of(context).size;
+    final bottom = MediaQuery.of(context).padding.bottom;
     
     return Scaffold(
+      backgroundColor: AppTheme.primaryDark,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background image
+          // Background
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/background.png',
-              fit: BoxFit.cover,
+            child: Consumer<UserProvider>(
+              builder: (context, user, _) => Image.asset(user.wallpaperPath, fit: BoxFit.cover),
             ),
           ),
           
-          // Gradient overlay
+          // Gradient Overlay
           Positioned.fill(
             child: Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.25),
-                    Colors.black.withValues(alpha: 0.05),
-                    Colors.black.withValues(alpha: 0.3),
+                    Color(0x50000000),
+                    Color(0x10000000),
+                    Color(0xFF080810),
                   ],
+                  stops: [0.0, 0.4, 0.85],
                 ),
               ),
             ),
           ),
           
-          // Content
           SafeArea(
             child: Column(
               children: [
-                SizedBox(height: screenHeight * 0.04),
+                SizedBox(height: size.height * 0.05),
                 
-                // Logo
-                Text(
-                  AppStrings.appName,
-                  style: AppTheme.logoStyle,
-                ).animate().fadeIn(duration: 600.ms),
-                
-                SizedBox(height: screenHeight * 0.015),
-                
-                // Moon
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.95),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        blurRadius: 25,
-                        spreadRadius: 8,
+                // Logo & Moon
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 32, height: 32,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [BoxShadow(color: Colors.white54, blurRadius: 20, spreadRadius: 2)],
                       ),
-                    ],
-                  ),
-                ).animate().fadeIn(duration: 800.ms),
+                    ).animate().scale(duration: 800.ms),
+                    const SizedBox(width: 12),
+                    Text(AppStrings.appName, style: AppTheme.logoStyle),
+                  ],
+                ).animate().fadeIn(duration: 600.ms),
                 
                 const Spacer(),
                 
-                // Bottom Sheet
-                AnimatedBottomSheet(
-                  height: 0.38,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: bottomPadding),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          AppStrings.signIn,
-                          style: AppTheme.titleStyle,
-                        ),
-                        
-                        const SizedBox(height: 28),
-                        
-                        // Gmail button
-                        DayloOutlinedButton(
-                          text: AppStrings.gmail,
-                          onPressed: () {
-                            // TODO: Implement Gmail sign in
-                          },
-                        ),
-                        
-                        const SizedBox(height: 14),
-                        
-                        // Apple button
-                        DayloOutlinedButton(
-                          text: AppStrings.apple,
-                          onPressed: () {
-                            // TODO: Implement Apple sign in
-                          },
-                        ),
-                        
-                        const SizedBox(height: 22),
-                        
-                        // Create account button
-                        DayloFilledButton(
-                          text: AppStrings.createAccount,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              PageRouteBuilder(
-                                pageBuilder: (context, animation, secondaryAnimation) => 
-                                  const RegistrationScreen(),
-                                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  );
-                                },
-                                transitionDuration: const Duration(milliseconds: 400),
+                // Login Content
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: Column(
+                    children: [
+                      Text(
+                        AppStrings.signIn,
+                        style: AppTheme.headlineStyle.copyWith(fontSize: 32),
+                      ).animate().fadeIn(duration: 600.ms, delay: 200.ms).slideY(begin: 0.1, end: 0),
+                      
+                      const SizedBox(height: 12),
+                      
+                      Text(
+                        'Добро пожаловать обратно',
+                        style: AppTheme.bodyStyle.copyWith(color: AppTheme.white54),
+                      ).animate().fadeIn(duration: 600.ms, delay: 300.ms),
+                      
+                      const SizedBox(height: 48),
+                      
+                      // Social Buttons
+                      _SocialButton(
+                        icon: Icons.g_mobiledata_rounded,
+                        label: AppStrings.gmail,
+                        onPressed: () => _navigateToMain(context),
+                      ).animate().fadeIn(duration: 600.ms, delay: 400.ms).slideX(begin: -0.1, end: 0),
+                      
+                      const SizedBox(height: 16),
+                      
+                      _SocialButton(
+                        icon: Icons.apple_rounded,
+                        label: AppStrings.apple,
+                        onPressed: () => _navigateToMain(context),
+                      ).animate().fadeIn(duration: 600.ms, delay: 500.ms).slideX(begin: 0.1, end: 0),
+                      
+                      const SizedBox(height: 32),
+                      
+                      // Registration Link
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder: (_, __, ___) => const RegistrationScreen(),
+                              transitionsBuilder: (_, animation, __, child) => FadeTransition(opacity: animation, child: child),
+                            ),
+                          );
+                        },
+                        child: RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(text: 'Нет аккаунта? ', style: AppTheme.captionStyle.copyWith(fontSize: 14)),
+                              TextSpan(
+                                text: AppStrings.createAccount,
+                                style: AppTheme.captionStyle.copyWith(
+                                  fontSize: 14,
+                                  color: AppTheme.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            );
-                          },
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ).animate().fadeIn(duration: 600.ms, delay: 600.ms),
+                      
+                      SizedBox(height: bottom + 40),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _navigateToMain(BuildContext context) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const MainScreen()),
+      (route) => false,
+    );
+  }
+}
+
+class _SocialButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _SocialButton({required this.icon, required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            height: 60,
+            decoration: BoxDecoration(
+              color: AppTheme.white08,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppTheme.white12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: AppTheme.titleStyle.copyWith(fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

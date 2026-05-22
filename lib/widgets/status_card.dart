@@ -19,28 +19,38 @@ class StatusCard extends StatelessWidget {
   String get _statusText {
     if (customText != null) return customText!;
     switch (status) {
-      case HealthStatus.excellent: return 'превосходно';
-      case HealthStatus.good: return 'хорошо';
-      case HealthStatus.normal: return 'нормально';
-      case HealthStatus.bad: return 'плохо';
+      case HealthStatus.excellent: return 'Превосходно';
+      case HealthStatus.good:      return 'Хорошо';
+      case HealthStatus.normal:    return 'Нормально';
+      case HealthStatus.bad:       return 'Нужен отдых';
+    }
+  }
+
+  IconData get _icon {
+    switch (status) {
+      case HealthStatus.excellent: return Icons.sentiment_very_satisfied_rounded;
+      case HealthStatus.good:      return Icons.sentiment_satisfied_rounded;
+      case HealthStatus.normal:    return Icons.sentiment_neutral_rounded;
+      case HealthStatus.bad:       return Icons.sentiment_dissatisfied_rounded;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final cardColor = customColor ?? const Color(0xFFFF9500);
+
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: cardColor.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(20),
+            color: cardColor.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.2),
-              width: 1,
+              color: cardColor.withValues(alpha: 0.3),
+              width: 0.8,
             ),
           ),
           child: Column(
@@ -48,46 +58,35 @@ class StatusCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Ваше',
-                style: AppTheme.bodyStyle.copyWith(
-                  color: AppTheme.white.withValues(alpha: 0.9),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  height: 1.1,
+                'Состояние',
+                style: AppTheme.labelStyle.copyWith(
+                  color: AppTheme.white.withValues(alpha: 0.6),
+                  letterSpacing: 0.5,
                 ),
               ),
-              Text(
-                'состояние',
-                style: AppTheme.bodyStyle.copyWith(
-                  color: AppTheme.white.withValues(alpha: 0.9),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 _statusText,
-                style: AppTheme.bodyStyle.copyWith(
+                style: AppTheme.titleStyle.copyWith(
                   color: AppTheme.white,
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                 ),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 10),
+              const Spacer(),
               Align(
                 alignment: Alignment.bottomRight,
                 child: Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    Icons.favorite_rounded,
-                    color: AppTheme.white.withValues(alpha: 0.95),
+                    _icon,
+                    color: Colors.white.withValues(alpha: 0.95),
                     size: 18,
                   ),
                 ),

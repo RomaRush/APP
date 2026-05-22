@@ -19,6 +19,7 @@ class LiquidNavBar extends StatefulWidget {
 
 class _LiquidNavBarState extends State<LiquidNavBar> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  final GlobalKey _pillKey = GlobalKey();
   
   // Position of the slider (0.0 to 4.0)
   // We use this to drive the UI. When animating, it matches controller.value.
@@ -151,12 +152,11 @@ class _LiquidNavBarState extends State<LiquidNavBar> with SingleTickerProviderSt
       // 1. Minimum width base
       double baseWidth = 55;
       
-      // 2. Velocity stretch (Squash & Stretch principle)
-      // When moving fast, it stretches wide and gets shorter
-      double velocityStretch = (_velocity * 30).clamp(0.0, 40.0); // Amplified effect
+      // 2. Velocity stretch (subtle Apple-like — minimal squash & stretch)
+      double velocityStretch = (_velocity * 12).clamp(0.0, 16.0);
       
-      // 3. Dragging stretch (Elastic tension)
-      double dragStretch = _isDragging ? 15.0 : 0.0;
+      // 3. Dragging stretch (very light)
+      double dragStretch = _isDragging ? 6.0 : 0.0;
 
       double totalWidth = baseWidth + velocityStretch + dragStretch;
       
@@ -181,20 +181,18 @@ class _LiquidNavBarState extends State<LiquidNavBar> with SingleTickerProviderSt
   Widget _buildGestureLayer(double pillWidth, double itemWidth) {
     return GestureDetector(
       onHorizontalDragStart: (details) {
-        // Stop animation if running
         _controller.stop();
         setState(() {
           _isDragging = true;
-          HapticFeedback.lightImpact();
+          HapticFeedback.selectionClick();
         });
       },
       onHorizontalDragUpdate: (details) {
         setState(() {
           double deltaUnits = details.primaryDelta! / itemWidth;
           _currentPosition += deltaUnits;
-          // Elastic bounds
-          if (_currentPosition < -0.2) _currentPosition = -0.2;
-          if (_currentPosition > 4.2) _currentPosition = 4.2;
+          if (_currentPosition < -0.1) _currentPosition = -0.1;
+          if (_currentPosition > 4.1) _currentPosition = 4.1;
         });
       },
       onHorizontalDragEnd: (details) {
@@ -207,17 +205,27 @@ class _LiquidNavBarState extends State<LiquidNavBar> with SingleTickerProviderSt
         });
       },
       onTapUp: (details) {
-          final RenderBox box = context.findRenderObject() as RenderBox;
-          final localPos = box.globalToLocal(details.globalPosition);
-          // Center-based hit testing for accuracy
-          double rawIndex = (localPos.dx / itemWidth);
-          int index = rawIndex.floor().clamp(0, 4);
-          
+          // Find the pill's bounding box to correctly compute index
+          final RenderBox? pillBox = _pillKey.currentContext?.findRenderObject() as RenderBox?;
+          double posInPill;
+          if (pillBox != null) {
+            final localPos = pillBox.globalToLocal(details.globalPosition);
+            posInPill = localPos.dx.clamp(0.0, pillWidth - 1);
+          } else {
+            // Fallback: use screen-level calculation
+            final RenderBox box = context.findRenderObject() as RenderBox;
+            final localPos = box.globalToLocal(details.globalPosition);
+            final double screenWidth = box.size.width;
+            final double pillStart = (screenWidth - pillWidth) / 2;
+            posInPill = (localPos.dx - pillStart).clamp(0.0, pillWidth - 1);
+          }
+          int index = (posInPill / itemWidth).floor().clamp(0, 4);
           _animateTo(index.toDouble());
-           widget.onTap(index);
-           HapticFeedback.selectionClick();
+          widget.onTap(index);
+          HapticFeedback.selectionClick();
       },
       child: Container(
+        key: _pillKey,
         color: Colors.transparent, 
         child: Row(
           mainAxisAlignment: MainAxisAlignment.start,
@@ -237,7 +245,7 @@ class _LiquidNavBarState extends State<LiquidNavBar> with SingleTickerProviderSt
     return ClipRRect(
       borderRadius: BorderRadius.circular(40),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           decoration: BoxDecoration(
             color: const Color(0xFF161618).withValues(alpha: 0.65),

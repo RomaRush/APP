@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/models/note.dart';
 import '../../core/providers/notes_provider.dart';
+import '../../core/providers/user_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../widgets/premium_dialog.dart';
 
 class EditNoteScreen extends StatefulWidget {
   final Note? note;
@@ -77,6 +79,7 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
         reminderDateTime: _reminderTime,
       );
       await provider.addNote(newNote);
+      if (mounted) context.read<UserProvider>().completeDailyTask('note');
     } else {
       final updatedNote = widget.note!.copyWith(
         title: title.isEmpty ? 'Без названия' : title,
@@ -255,24 +258,25 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
                IconButton(
                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                  onPressed: () async {
-                   final confirm = await showDialog<bool>(
-                     context: context,
-                     builder: (context) => AlertDialog(
-                       backgroundColor: const Color(0xFF1E1E1E),
-                       title: const Text('Удалить заметку?', style: TextStyle(color: Colors.white)),
-                       content: const Text('Это действие нельзя отменить.', style: TextStyle(color: Colors.white70)),
-                       actions: [
-                         TextButton(
-                           child: const Text('Отмена'),
-                           onPressed: () => Navigator.pop(context, false),
-                         ),
-                         TextButton(
-                           child: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
-                           onPressed: () => Navigator.pop(context, true),
-                         ),
-                       ],
-                     ),
-                   );
+                    final confirm = await showPremiumDialog<bool>(
+                      context: context,
+                      title: 'Удалить заметку?',
+                      content: const Text(
+                        'Это действие нельзя отменить.',
+                        style: TextStyle(color: AppTheme.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                      actions: [
+                        TextButton(
+                          child: const Text('Отмена', style: TextStyle(color: AppTheme.white38)),
+                          onPressed: () => Navigator.pop(context, false),
+                        ),
+                        TextButton(
+                          child: const Text('Удалить', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                          onPressed: () => Navigator.pop(context, true),
+                        ),
+                      ],
+                    );
                    
                    if (confirm == true && mounted) {
                      await context.read<NotesProvider>().deleteNote(widget.note!.id);
@@ -356,7 +360,7 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
                                controller: TextEditingController(text: _todos[i].text)
                                   ..selection = TextSelection.collapsed(offset: _todos[i].text.length),
                                style: AppTheme.bodyStyle.copyWith(
-                                 color: Colors.white.withOpacity(0.9),
+                                 color: Colors.white.withValues(alpha: 0.9),
                                  decoration: _todos[i].isDone ? TextDecoration.lineThrough : null,
                                  decorationColor: Colors.white54,
                                ),
@@ -382,7 +386,7 @@ class _EditNoteScreenState extends State<EditNoteScreen> {
                     )
                   : TextField(
                       controller: _contentController,
-                      style: AppTheme.bodyStyle.copyWith(color: Colors.white.withOpacity(0.9), height: 1.5),
+                      style: AppTheme.bodyStyle.copyWith(color: Colors.white.withValues(alpha: 0.9), height: 1.5),
                       decoration: InputDecoration(
                         hintText: 'Начните писать...',
                         hintStyle: AppTheme.bodyStyle.copyWith(color: Colors.white30),

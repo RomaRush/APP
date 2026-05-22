@@ -1,6 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
+import '../data/database_helper.dart';
 
 class TodoItem {
   final String id;
@@ -23,26 +23,26 @@ class TodoItem {
     this.category = 'Общее',
   });
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toMap() => {
     'id': id,
     'title': title,
     'description': description,
-    'isCompleted': isCompleted,
+    'isCompleted': isCompleted ? 1 : 0,
     'createdAt': createdAt.toIso8601String(),
     'dueDate': dueDate?.toIso8601String(),
     'priority': priority,
     'category': category,
   };
 
-  factory TodoItem.fromJson(Map<String, dynamic> json) => TodoItem(
-    id: json['id'],
-    title: json['title'],
-    description: json['description'],
-    isCompleted: json['isCompleted'] ?? false,
-    createdAt: DateTime.parse(json['createdAt']),
-    dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate']) : null,
-    priority: json['priority'] ?? 1,
-    category: json['category'] ?? 'Общее',
+  factory TodoItem.fromMap(Map<String, dynamic> map) => TodoItem(
+    id: map['id'],
+    title: map['title'],
+    description: map['description'],
+    isCompleted: map['isCompleted'] == 1,
+    createdAt: DateTime.parse(map['createdAt']),
+    dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate']) : null,
+    priority: map['priority'] ?? 1,
+    category: map['category'] ?? 'Общее',
   );
 }
 
@@ -95,36 +95,30 @@ class TodoProvider extends ChangeNotifier {
 
   Future<void> _loadData() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final db = await DatabaseHelper().database;
       
-      final todosJson = prefs.getString('todo_items');
-      if (todosJson != null) {
-        final decoded = jsonDecode(todosJson) as List;
-        _todos = decoded.map((item) => TodoItem.fromJson(item)).toList();
+      // Load categories
+      final List<Map<String, dynamic>> cats = await db.query('todo_categories');
+      if (cats.isNotEmpty) {
+        _categories = cats.map((c) => c['name'] as String).toList();
+      } else {
+        // Initialize default categories in DB if empty
+        for (var cat in _categories) {
+          await db.insert('todo_categories', {'name': cat}, conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
       }
-      
-      final categoriesJson = prefs.getString('todo_categories');
-      if (categoriesJson != null) {
-        _categories = List<String>.from(jsonDecode(categoriesJson));
-      }
+
+      // Load todos
+      final List<Map<String, dynamic>> maps = await db.query('todos');
+      _todos = maps.map((item) => TodoItem.fromMap(item)).toList();
       
       notifyListeners();
     } catch (e) {
-      debugPrint('Error loading todo data: $e');
+      debugPrint('Error loading todo data from SQLite: $e');
     }
   }
 
-  Future<void> _saveData() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('todo_items', jsonEncode(_todos.map((t) => t.toJson()).toList()));
-      await prefs.setString('todo_categories', jsonEncode(_categories));
-    } catch (e) {
-      debugPrint('Error saving todo data: $e');
-    }
-  }
-
-  void addTodo(String title, {String? description, DateTime? dueDate, int priority = 1, String category = 'Общее'}) {
+  Future<void> addTodo(String title, {String? description, DateTime? dueDate, int priority = 1, String category = 'Общее'}) async {
     final todo = TodoItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       title: title,
@@ -135,11 +129,17 @@ class TodoProvider extends ChangeNotifier {
       category: category,
     );
     _todos.add(todo);
-    _saveData();
-    notifyListeners();
+    notifyListeners(); // Обновляем UI мгновенно, не дожидаясь базы
+
+    try {
+      final db = await DatabaseHelper().database;
+      await db.insert('todos', todo.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (e) {
+      debugPrint('Error saving todo: $e');
+    }
   }
 
-  void updateTodo(String id, {String? title, String? description, DateTime? dueDate, int? priority, String? category}) {
+  Future<void> updateTodo(String id, {String? title, String? description, DateTime? dueDate, int? priority, String? category}) async {
     final index = _todos.indexWhere((t) => t.id == id);
     if (index != -1) {
       if (title != null) _todos[index].title = title;
@@ -147,24 +147,42 @@ class TodoProvider extends ChangeNotifier {
       if (dueDate != null) _todos[index].dueDate = dueDate;
       if (priority != null) _todos[index].priority = priority;
       if (category != null) _todos[index].category = category;
-      _saveData();
       notifyListeners();
+
+      try {
+        final db = await DatabaseHelper().database;
+        await db.update('todos', _todos[index].toMap(), where: 'id = ?', whereArgs: [id]);
+      } catch (e) {
+        debugPrint('Error updating todo: $e');
+      }
     }
   }
 
-  void toggleTodo(String id) {
+  Future<void> toggleTodo(String id) async {
     final index = _todos.indexWhere((t) => t.id == id);
     if (index != -1) {
       _todos[index].isCompleted = !_todos[index].isCompleted;
-      _saveData();
       notifyListeners();
+
+      try {
+        final db = await DatabaseHelper().database;
+        await db.update('todos', {'isCompleted': _todos[index].isCompleted ? 1 : 0}, where: 'id = ?', whereArgs: [id]);
+      } catch (e) {
+        debugPrint('Error toggling todo: $e');
+      }
     }
   }
 
-  void deleteTodo(String id) {
+  Future<void> deleteTodo(String id) async {
     _todos.removeWhere((t) => t.id == id);
-    _saveData();
     notifyListeners();
+
+    try {
+      final db = await DatabaseHelper().database;
+      await db.delete('todos', where: 'id = ?', whereArgs: [id]);
+    } catch (e) {
+      debugPrint('Error deleting todo: $e');
+    }
   }
 
   void setSelectedCategory(String category) {
@@ -177,32 +195,51 @@ class TodoProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addCategory(String category) {
+  Future<void> addCategory(String category) async {
     if (!_categories.contains(category)) {
       _categories.add(category);
-      _saveData();
       notifyListeners();
+
+      try {
+        final db = await DatabaseHelper().database;
+        await db.insert('todo_categories', {'name': category}, conflictAlgorithm: ConflictAlgorithm.ignore);
+      } catch (e) {
+        debugPrint('Error inserting category: $e');
+      }
     }
   }
 
-  void deleteCategory(String category) {
+  Future<void> deleteCategory(String category) async {
     if (category != 'Общее') {
       _categories.remove(category);
-      // Move todos from deleted category to 'Общее'
+      
       for (var todo in _todos.where((t) => t.category == category)) {
         todo.category = 'Общее';
       }
       if (_selectedCategory == category) {
         _selectedCategory = 'Все';
       }
-      _saveData();
       notifyListeners();
+
+      try {
+        final db = await DatabaseHelper().database;
+        await db.delete('todo_categories', where: 'name = ?', whereArgs: [category]);
+        await db.update('todos', {'category': 'Общее'}, where: 'category = ?', whereArgs: [category]);
+      } catch (e) {
+        debugPrint('Error deleting category: $e');
+      }
     }
   }
 
-  void clearCompleted() {
+  Future<void> clearCompleted() async {
     _todos.removeWhere((t) => t.isCompleted);
-    _saveData();
     notifyListeners();
+
+    try {
+      final db = await DatabaseHelper().database;
+      await db.delete('todos', where: 'isCompleted = ?', whereArgs: [1]);
+    } catch (e) {
+      debugPrint('Error clearing completed todos: $e');
+    }
   }
 }

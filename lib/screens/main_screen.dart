@@ -10,19 +10,24 @@ class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  State<MainScreen> createState() => MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class MainScreenState extends State<MainScreen> {
   int _currentIndex = 1; // Home is default (center)
 
-  final List<Widget> _screens = [
-    const WorkScreen(),
-    const HomeScreen(),
-    const HealthScreen(),
-    const FinanceScreen(),
-    const NutritionScreen(),
-  ];
+  final List<ScrollController> _scrollControllers = List.generate(5, (_) => ScrollController());
+
+
+  void switchTab(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    // Scroll to top immediately when switching to the tab
+    if (_scrollControllers[index].hasClients) {
+      _scrollControllers[index].jumpTo(0.0);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +37,13 @@ class _MainScreenState extends State<MainScreen> {
           // Screen content
           IndexedStack(
             index: _currentIndex,
-            children: _screens,
+            children: [
+              PrimaryScrollController(controller: _scrollControllers[0], child: const WorkScreen()),
+              PrimaryScrollController(controller: _scrollControllers[1], child: const HomeScreen()),
+              PrimaryScrollController(controller: _scrollControllers[2], child: const HealthScreen()),
+              PrimaryScrollController(controller: _scrollControllers[3], child: const FinanceScreen()),
+              PrimaryScrollController(controller: _scrollControllers[4], child: const NutritionScreen()),
+            ],
           ),
           // Floating navigation at bottom
           Positioned(
@@ -41,11 +52,7 @@ class _MainScreenState extends State<MainScreen> {
             bottom: 0,
             child: LiquidNavBar(
               currentIndex: _currentIndex,
-              onTap: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
+              onTap: switchTab,
             ),
           ),
         ],
@@ -54,20 +61,4 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
 
-  const _PlaceholderScreen({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Text(
-          title,
-          style: const TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
-}

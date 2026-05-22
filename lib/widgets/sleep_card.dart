@@ -1,6 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
+import '../widgets/minimal_card.dart';
 
 class SleepCard extends StatelessWidget {
   final List<double> weeklyData;
@@ -12,206 +12,163 @@ class SleepCard extends StatelessWidget {
     this.todayHours = 0,
   });
 
-  Color _getSleepQualityColor(double hours) {
-    if (hours >= 7) return Colors.greenAccent;
-    if (hours >= 5) return Colors.orangeAccent;
-    return Colors.redAccent;
+  Color _qualityColor(double h) {
+    if (h >= 7) return AppTheme.accentGreen;
+    if (h >= 5) return AppTheme.accentGold;
+    return AppTheme.errorRed;
   }
 
-  String _getSleepQualityText(double hours) {
-    if (hours >= 8) return 'Отлично';
-    if (hours >= 7) return 'Хорошо';
-    if (hours >= 5) return 'Мало';
+  String _qualityLabel(double h) {
+    if (h >= 8) return 'Отлично';
+    if (h >= 7) return 'Хорошо';
+    if (h >= 5) return 'Мало';
     return 'Критично';
   }
 
   @override
   Widget build(BuildContext context) {
-    final qualityColor = _getSleepQualityColor(todayHours);
-    final days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-    
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+    final color = _qualityColor(todayHours);
+    final maxVal = weeklyData.reduce((a, b) => a > b ? a : b).clamp(1.0, 12.0);
+    const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+    return MinimalCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6B8EFF).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.bedtime_rounded,
-                          color: const Color(0xFF6B8EFF),
-                          size: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Сон',
-                        style: AppTheme.bodyStyle.copyWith(
-                          color: AppTheme.white.withValues(alpha: 0.9),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: qualityColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _getSleepQualityText(todayHours),
-                      style: TextStyle(
-                        color: qualityColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentIndigo.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.bedtime_rounded, color: AppTheme.accentIndigo, size: 16),
               ),
-              const SizedBox(height: 14),
-              
-              // Main content
-              Row(
-                children: [
-                  // Bar chart with day labels
-                  Expanded(
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          height: 50,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: weeklyData.asMap().entries.map((entry) {
-                              final barHeight = entry.value > 0 
-                                  ? (entry.value / 12) * 40 + 10 
-                                  : 6.0;
-                              final isToday = entry.key == weeklyData.length - 1;
-                              final barColor = isToday 
-                                  ? _getSleepQualityColor(entry.value)
-                                  : const Color(0xFF5B7FFF).withValues(alpha: 0.4);
-                              
-                              return Column(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  AnimatedContainer(
-                                    duration: Duration(milliseconds: 300 + entry.key * 50),
-                                    width: 10,
-                                    height: barHeight,
-                                    decoration: BoxDecoration(
-                                      color: barColor,
-                                      borderRadius: BorderRadius.circular(5),
-                                      boxShadow: isToday ? [
-                                        BoxShadow(
-                                          color: barColor.withOpacity(0.5),
-                                          blurRadius: 8,
-                                          spreadRadius: 1,
-                                        ),
-                                      ] : null,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        // Day labels
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: days.asMap().entries.map((entry) {
-                            final isToday = entry.key == days.length - 1;
-                            return Text(
-                              entry.value,
-                              style: TextStyle(
-                                color: isToday 
-                                  ? Colors.white70 
-                                  : Colors.white30,
-                                fontSize: 9,
-                                fontWeight: isToday ? FontWeight.w600 : FontWeight.normal,
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
+              const SizedBox(width: 10),
+              Text('Сон', style: AppTheme.titleStyle.copyWith(fontSize: 15)),
+              const Spacer(),
+              // Quality badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _qualityLabel(todayHours),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
                   ),
-                  const SizedBox(width: 16),
-                  
-                  // Hours display
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              todayHours.toStringAsFixed(1),
-                              style: AppTheme.headlineStyle.copyWith(
-                                fontSize: 28,
-                                color: AppTheme.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 4, left: 2),
-                              child: Text(
-                                'ч',
-                                style: TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          'сегодня',
-                          style: AppTheme.bodyStyle.copyWith(
-                            color: AppTheme.white.withValues(alpha: 0.5),
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
-        ),
+
+          const SizedBox(height: 20),
+
+          // Chart + stat
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Bar chart
+              Expanded(
+                child: SizedBox(
+                  height: 64,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: weeklyData.asMap().entries.map((e) {
+                      final isToday = e.key == weeklyData.length - 1;
+                      final barH = ((e.value / maxVal) * 52).clamp(4.0, 52.0);
+                      final barColor = isToday
+                          ? color
+                          : AppTheme.white.withValues(alpha: 0.1);
+
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (isToday)
+                            Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.only(bottom: 3),
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOut,
+                            width: isToday ? 10 : 8,
+                            height: barH,
+                            decoration: BoxDecoration(
+                              color: barColor,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            days[e.key],
+                            style: AppTheme.captionStyle.copyWith(
+                              fontSize: 9,
+                              color: isToday ? AppTheme.white70 : AppTheme.white38,
+                              fontWeight: isToday ? FontWeight.w700 : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              // Today stat pill
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: color.withValues(alpha: 0.18)),
+                ),
+                child: Column(
+                  children: [
+                    RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: todayHours.toStringAsFixed(1),
+                            style: AppTheme.headlineStyle.copyWith(
+                              fontSize: 26,
+                              color: color,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' ч',
+                            style: AppTheme.captionStyle.copyWith(color: color),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'сегодня',
+                      style: AppTheme.captionStyle.copyWith(fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

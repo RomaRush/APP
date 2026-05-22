@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/nutrition_provider.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../widgets/minimal_card.dart';
 
 class WaterTracker extends StatefulWidget {
   const WaterTracker({super.key});
@@ -12,76 +14,80 @@ class WaterTracker extends StatefulWidget {
 class _WaterTrackerState extends State<WaterTracker> {
   DrinkType _selectedType = DrinkType.water;
 
+  Color _getDrinkColor(DrinkType type) {
+    switch (type) {
+      case DrinkType.water: return AppTheme.accentBlue;
+      case DrinkType.coffee: return Colors.brown;
+      case DrinkType.tea: return Colors.green;
+      case DrinkType.juice: return Colors.orange;
+      case DrinkType.soda: return Colors.redAccent;
+      case DrinkType.other: return AppTheme.accentPurple;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<NutritionProvider>(
       builder: (context, nutrition, child) {
         final mlCurrent = nutrition.waterMl;
         final mlGoal = nutrition.waterGoalMl;
-        final mlLeft = (mlGoal - mlCurrent).clamp(0, 9999);
         final double progress = (mlGoal > 0 ? mlCurrent / mlGoal : 0.0).clamp(0.0, 1.0);
+        final activeColor = _getDrinkColor(_selectedType);
 
-        return Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-          ),
+        return MinimalCard(
+          padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        const Icon(Icons.water_drop, color: Colors.blueAccent),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Водный баланс',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800]),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                  Icon(Icons.water_drop_rounded, color: activeColor, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Вода', style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                  const Spacer(),
+                  Text(
+                    '$mlCurrent / $mlGoal мл',
+                    style: AppTheme.captionStyle.copyWith(color: AppTheme.white),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              
+              // Progress Bar
+              Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  color: AppTheme.white12,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: progress,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: activeColor,
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: activeColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
                         ),
                       ],
                     ),
                   ),
-                  if (mlLeft > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.blueAccent.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'Осталось: $mlLeft мл',
-                        style: const TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text(
-                        'Цель достигнута! 🎉',
-                        style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                ],
+                ),
               ),
-              const SizedBox(height: 20),
               
-              // Drink Type Selector
+              const SizedBox(height: 24),
+              
+              // Type Selector
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
                 child: Row(
                   children: DrinkType.values.map((type) {
                     final isSelected = _selectedType == type;
+                    final typeColor = _getDrinkColor(type);
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
@@ -90,26 +96,19 @@ class _WaterTrackerState extends State<WaterTracker> {
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: isSelected ? Colors.blueAccent : Colors.grey[100],
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: isSelected ? Colors.blueAccent : Colors.transparent,
-                            ),
+                            color: isSelected ? typeColor : AppTheme.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                _getDrinkIcon(type),
-                                style: const TextStyle(fontSize: 16),
-                              ),
+                              Text(_getDrinkIcon(type), style: const TextStyle(fontSize: 14)),
                               const SizedBox(width: 6),
                               Text(
                                 _getDrinkName(type),
                                 style: TextStyle(
-                                  color: isSelected ? Colors.white : Colors.grey[600],
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  color: isSelected ? Colors.white : AppTheme.white38,
                                   fontSize: 12,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                 ),
                               ),
                             ],
@@ -121,148 +120,41 @@ class _WaterTrackerState extends State<WaterTracker> {
                 ),
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _CircleButton(icon: Icons.remove, onTap: () => nutrition.removeLastDrink()),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        children: [
-                          GestureDetector(
-                            onTap: () => _showDrinkHistory(context, nutrition),
-                            child: Text(
-                              '$mlCurrent / $mlGoal мл',
-                              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[900]),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              minHeight: 12,
-                              backgroundColor: Colors.grey[200],
-                              color: Colors.blueAccent,
-                            ),
-                          ),
-                        ],
-                      ),
+                    child: _AddWaterButton(
+                      label: '250 мл',
+                      onTap: () => nutrition.addDrink(_selectedType, 250),
                     ),
                   ),
-                  _CircleButton(
-                    icon: Icons.add, 
-                    onTap: () {
-                      nutrition.addDrink(_selectedType, 250); // Default 250ml
-                    },
-                    color: Colors.blueAccent,
-                    iconColor: Colors.white,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _AddWaterButton(
+                      label: '500 мл',
+                      onTap: () => nutrition.addDrink(_selectedType, 500),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: () => nutrition.removeLastDrink(),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.undo_rounded, color: AppTheme.white38, size: 20),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Center(
-                 child: Text(
-                   'Выбрано: ${_getDrinkName(_selectedType)} (250 мл)',
-                   style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                 ),
-              )
             ],
           ),
         );
       },
-    );
-  }
-
-  void _showDrinkHistory(BuildContext context, NutritionProvider nutrition) {
-    // Access drink history from provider - we need to add a getter
-    final drinks = nutrition.todaysDrinks;
-    
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(context).size.height * 0.5,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[700],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'История напитков 💧',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: drinks.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'Пока ничего не выпито',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: drinks.length,
-                      itemBuilder: (context, index) {
-                        final drink = drinks[drinks.length - 1 - index]; // Newest first
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Text(
-                                _getDrinkIcon(drink.type),
-                                style: const TextStyle(fontSize: 24),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _getDrinkName(drink.type),
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                    ),
-                                    Text(
-                                      '${drink.time.hour.toString().padLeft(2, '0')}:${drink.time.minute.toString().padLeft(2, '0')}',
-                                      style: const TextStyle(color: Colors.white54, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '${drink.amountMl} мл',
-                                style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -289,30 +181,28 @@ class _WaterTrackerState extends State<WaterTracker> {
   }
 }
 
-class _CircleButton extends StatelessWidget {
-  final IconData icon;
+class _AddWaterButton extends StatelessWidget {
+  final String label;
   final VoidCallback onTap;
-  final Color? color;
-  final Color? iconColor;
 
-  const _CircleButton({
-    required this.icon, 
-    required this.onTap,
-    this.color,
-    this.iconColor,
-  });
+  const _AddWaterButton({required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: color ?? Colors.blue[50],
-          shape: BoxShape.circle,
+          color: AppTheme.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.white12),
         ),
-        child: Icon(icon, color: iconColor ?? Colors.blueAccent),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: AppTheme.titleStyle.copyWith(fontSize: 13, color: AppTheme.white70),
+        ),
       ),
     );
   }
