@@ -13,11 +13,15 @@ import '../../core/providers/user_provider.dart';
 class StoryViewScreen extends StatefulWidget {
   final List<StoryEntry> stories;
   final int initialIndex;
+  final String? userName;
+  final String? userAvatar;
 
   const StoryViewScreen({
     super.key,
     required this.stories,
     this.initialIndex = 0,
+    this.userName,
+    this.userAvatar,
   });
 
   @override
@@ -266,9 +270,13 @@ class _StoryViewScreenState extends State<StoryViewScreen> with TickerProviderSt
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 1.5),
                       image: DecorationImage(
-                        image: context.watch<UserProvider>().avatarPath != null
-                            ? FileImage(File(context.read<UserProvider>().avatarPath!)) as ImageProvider
-                            : const AssetImage('assets/images/user_avatar.png'),
+                        image: (widget.userAvatar != null && widget.userAvatar!.isNotEmpty)
+                            ? (widget.userAvatar!.startsWith('assets/')
+                                ? AssetImage(widget.userAvatar!) as ImageProvider
+                                : FileImage(File(widget.userAvatar!)) as ImageProvider)
+                            : (context.watch<UserProvider>().avatarPath != null
+                                ? FileImage(File(context.read<UserProvider>().avatarPath!)) as ImageProvider
+                                : const AssetImage('assets/images/user_avatar.png')),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -279,7 +287,7 @@ class _StoryViewScreenState extends State<StoryViewScreen> with TickerProviderSt
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        context.read<UserProvider>().name,
+                        widget.userName ?? context.read<UserProvider>().name,
                         style: AppTheme.bodyStyle.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
