@@ -9,6 +9,7 @@ import '../services/online_friends_service.dart';
 import '../services/auth_service.dart';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 
 class Achievement {
@@ -48,6 +49,7 @@ class UserProvider extends ChangeNotifier {
   int _userPoints = 0;
   String _myFriendCode = '';
   String _myEmail = '';
+  List<String> _myOnlineStories = [];
   
   // Daily checklist: task_id -> isCompleted
   final Map<String, bool> _dailyTasks = {
@@ -200,6 +202,7 @@ class UserProvider extends ChangeNotifier {
   String get myFriendCode => _myFriendCode;
   String get myEmail => _myEmail;
   bool get isAuthenticated => _myEmail.isNotEmpty;
+  List<String> get myOnlineStories => _myOnlineStories;
 
   UserProvider() {
     _loadData();
@@ -262,6 +265,7 @@ class UserProvider extends ChangeNotifier {
       }
       
       _myEmail = prefs.getString('user_email') ?? '';
+      _myOnlineStories = prefs.getStringList('user_online_stories') ?? [];
       
       syncProfileOnline();
       notifyListeners();
@@ -299,7 +303,7 @@ class UserProvider extends ChangeNotifier {
           _dailyTasks.entries.where((e) => e.value).map((e) => e.key).toList());
       await prefs.setString('user_friend_code', _myFriendCode);
       await prefs.setString('user_email', _myEmail);
-      
+      await prefs.setStringList('user_online_stories', _myOnlineStories);
     } catch (e) {
       debugPrint('Error saving user data: $e');
     }
@@ -350,18 +354,43 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addStoryImage(File image) {
-    _storyImages.add(StoryEntry(file: image, timestamp: DateTime.now()));
-    _storyDaysCount++;
-    _saveData();
-    notifyListeners();
+  Future<String?> _compressAndEncodeImage(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes, targetWidth: 120);
+      final frame = await codec.getNextFrame();
+      final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      if (data != null) {
+        final resizedBytes = data.buffer.asUint8List();
+        return 'data:image/png;base64,${base64Encode(resizedBytes)}';
+      }
+    } catch (e) {
+      debugPrint('Error compressing story image: $e');
+    }
+    return null;
   }
 
-  void addStoryEntry(StoryEntry entry) {
+  void addStoryImage(File image) async {
+    final entry = StoryEntry(file: image, timestamp: DateTime.now());
+    addStoryEntry(entry);
+  }
+
+  void addStoryEntry(StoryEntry entry) async {
     _storyImages.add(entry);
     _storyDaysCount++;
-    _saveData();
+    await _saveData();
     notifyListeners();
+
+    final base64Image = await _compressAndEncodeImage(entry.file);
+    if (base64Image != null) {
+      _myOnlineStories.add(base64Image);
+      if (_myOnlineStories.length > 4) {
+        _myOnlineStories.removeAt(0);
+      }
+      await _saveData();
+      syncProfileOnline();
+      notifyListeners();
+    }
   }
   
   // Manual increment for stats (as implied by "adds from user")
@@ -416,12 +445,22 @@ class UserProvider extends ChangeNotifier {
   }
 
   void syncProfileOnline() {
+    final unlockedIds = _achievements.where((a) => a.isUnlocked).map((a) => a.id).toList();
     if (_myFriendCode.isNotEmpty) {
       OnlineFriendsService.publishProfile(
         code: _myFriendCode,
         name: _name,
         nickname: '@${_name.toLowerCase().replaceAll(' ', '_')}',
         bio: _subtitle,
+        points: _userPoints,
+        level: 1 + (_userPoints ~/ 1000),
+        mockStories: _myOnlineStories,
+        mockAchievements: unlockedIds,
+      );
+      OnlineFriendsService.registerInGlobalDirectory(
+        code: _myFriendCode,
+        name: _name,
+        nickname: '@${_name.toLowerCase().replaceAll(' ', '_')}',
         points: _userPoints,
         level: 1 + (_userPoints ~/ 1000),
       );
@@ -436,6 +475,8 @@ class UserProvider extends ChangeNotifier {
           'level': 1 + (_userPoints ~/ 1000),
           'friendCode': _myFriendCode,
           'friends': _friends.map((f) => f.toJson()).toList(),
+          'mockStories': _myOnlineStories,
+          'mockAchievements': unlockedIds,
         },
       );
     }
@@ -457,6 +498,7 @@ class UserProvider extends ChangeNotifier {
       _myFriendCode = code;
       _userPoints = 0;
       _friends = [];
+      _myOnlineStories = [];
       await _saveData();
       syncProfileOnline();
       notifyListeners();
@@ -471,6 +513,7 @@ class UserProvider extends ChangeNotifier {
       _subtitle = profile['subtitle'] ?? 'Пользователь DAYLO';
       _myFriendCode = profile['friendCode'] ?? _generateFriendCode();
       _userPoints = profile['points'] ?? 0;
+      _myOnlineStories = List<String>.from(profile['mockStories'] ?? []);
       
       final friendsJson = profile['friends'];
       if (friendsJson != null) {
@@ -493,6 +536,7 @@ class UserProvider extends ChangeNotifier {
     _myFriendCode = _generateFriendCode();
     _userPoints = 0;
     _friends = [];
+    _myOnlineStories = [];
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     await _saveData();

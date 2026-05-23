@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/models/friend.dart';
+import '../../core/services/online_friends_service.dart';
 import 'friend_profile_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
@@ -15,12 +16,21 @@ class FriendsScreen extends StatefulWidget {
   State<FriendsScreen> createState() => _FriendsScreenState();
 }
 
-class _FriendsScreenState extends State<FriendsScreen> {
+class _FriendsScreenState extends State<FriendsScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _isLoadingGlobalProfile = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -338,21 +348,386 @@ class _FriendsScreenState extends State<FriendsScreen> {
     }
   }
 
+  Widget _buildMyFriendsTab(UserProvider userProvider, List<Friend> friends) {
+    return Column(
+      children: [
+        // Display personal Friend Code
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: GestureDetector(
+            onTap: () => _copyToClipboard(userProvider.myFriendCode),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.white05,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.white12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.copy_rounded, size: 18, color: AppTheme.accentGreen),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Мой код друга:',
+                        style: AppTheme.bodyStyle.copyWith(color: AppTheme.white70, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    userProvider.myFriendCode,
+                    style: AppTheme.titleStyle.copyWith(
+                      color: AppTheme.accentGreen,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: TextField(
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Поиск друзей...',
+              hintStyle: const TextStyle(color: AppTheme.white38),
+              prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.white38),
+              filled: true,
+              fillColor: AppTheme.white05,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (val) {
+              setState(() {
+                _searchQuery = val;
+              });
+            },
+          ),
+        ),
+        Expanded(
+          child: friends.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _searchQuery.isEmpty
+                            ? Icons.people_outline_rounded
+                            : Icons.search_off_rounded,
+                        size: 64,
+                        color: AppTheme.white38,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _searchQuery.isEmpty
+                            ? 'У вас пока нет друзей'
+                            : 'Ничего не найдено',
+                        style: AppTheme.headlineStyle.copyWith(
+                          color: AppTheme.white38,
+                          fontSize: 16,
+                        ),
+                      ),
+                      if (_searchQuery.isEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Добавьте друга вручную или по QR-коду!',
+                          style: AppTheme.bodyStyle.copyWith(
+                            color: AppTheme.white38,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ]
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: friends.length,
+                  itemBuilder: (context, index) {
+                    final friend = friends[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF13131F),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppTheme.white05),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: CircleAvatar(
+                          radius: 24,
+                          backgroundColor: AppTheme.accentGreen.withOpacity(0.1),
+                          child: Text(
+                            friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: AppTheme.accentGreen,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          friend.name,
+                          style: AppTheme.titleStyle.copyWith(fontSize: 16),
+                        ),
+                        subtitle: Text(
+                          friend.nickname,
+                          style: AppTheme.captionStyle.copyWith(color: AppTheme.white38),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accentGreen.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Lvl ${friend.level}',
+                                style: const TextStyle(
+                                  color: AppTheme.accentGreen,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.errorRed, size: 20),
+                              onPressed: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    backgroundColor: const Color(0xFF13131F),
+                                    title: const Text('Удалить друга?', style: TextStyle(color: Colors.white)),
+                                    content: Text('Вы действительно хотите удалить ${friend.name} из друзей?', style: const TextStyle(color: AppTheme.white70)),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx),
+                                        child: const Text('Отмена', style: TextStyle(color: Colors.white38)),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          userProvider.removeFriend(friend.id);
+                                          Navigator.pop(ctx);
+                                        },
+                                        child: const Text('Удалить', style: TextStyle(color: AppTheme.errorRed)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => FriendProfileScreen(friend: friend),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlobalTab(UserProvider userProvider) {
+    return FutureBuilder<List<Friend>>(
+      future: OnlineFriendsService.fetchGlobalDirectory(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppTheme.accentGreen));
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Ошибка загрузки: ${snapshot.error}',
+              style: const TextStyle(color: AppTheme.errorRed),
+            ),
+          );
+        }
+        final globalUsers = snapshot.data ?? [];
+        final filteredUsers = globalUsers.where((u) => u.id != userProvider.myFriendCode).toList();
+
+        if (filteredUsers.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.public_off_rounded, size: 64, color: AppTheme.white38),
+                const SizedBox(height: 16),
+                Text(
+                  'Глобальный список пуст',
+                  style: AppTheme.headlineStyle.copyWith(color: AppTheme.white38, fontSize: 16),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          color: AppTheme.accentGreen,
+          onRefresh: () async {
+            setState(() {});
+          },
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: filteredUsers.length,
+            itemBuilder: (context, index) {
+              final globalUser = filteredUsers[index];
+              final isFriend = userProvider.friends.any((f) => f.id == globalUser.id);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF13131F),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppTheme.white05),
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: AppTheme.accentGreen.withOpacity(0.1),
+                    child: Text(
+                      globalUser.name.isNotEmpty ? globalUser.name[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                        color: AppTheme.accentGreen,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  title: Text(globalUser.name, style: AppTheme.titleStyle.copyWith(fontSize: 16)),
+                  subtitle: Text(globalUser.nickname, style: AppTheme.captionStyle.copyWith(color: AppTheme.white38)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentGreen.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Lvl ${globalUser.level}',
+                          style: const TextStyle(color: AppTheme.accentGreen, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (isFriend)
+                        const Icon(Icons.check_circle_rounded, color: AppTheme.accentGreen, size: 24)
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.person_add_rounded, color: AppTheme.accentGreen),
+                          onPressed: () async {
+                            try {
+                              final added = await userProvider.searchAndAddFriendOnline(globalUser.id);
+                              if (added != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Друг ${globalUser.name} добавлен!'),
+                                    backgroundColor: AppTheme.accentGreen,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(e.toString().replaceAll('Exception: ', '')),
+                                  backgroundColor: AppTheme.errorRed,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                  onTap: () async {
+                    setState(() {
+                      _isLoadingGlobalProfile = true;
+                    });
+                    try {
+                      final fullFriend = await OnlineFriendsService.lookupProfile(globalUser.id);
+                      if (mounted) {
+                        setState(() {
+                          _isLoadingGlobalProfile = false;
+                        });
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FriendProfileScreen(friend: fullFriend ?? globalUser),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        setState(() {
+                          _isLoadingGlobalProfile = false;
+                        });
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FriendProfileScreen(friend: globalUser),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context);
+    final friends = userProvider.friends.where((f) {
+      final query = _searchQuery.toLowerCase();
+      return f.name.toLowerCase().contains(query) ||
+          f.nickname.toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFF080810),
       appBar: AppBar(
         title: const Text('Друзья', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: AppTheme.accentGreen,
+          labelColor: AppTheme.accentGreen,
+          unselectedLabelColor: AppTheme.white38,
+          tabs: const [
+            Tab(text: 'Мои друзья'),
+            Tab(text: 'Глобальные'),
+          ],
+        ),
         actions: [
-          Consumer<UserProvider>(
-            builder: (context, user, _) => IconButton(
-              icon: const Icon(Icons.qr_code_2_rounded, color: AppTheme.white70),
-              onPressed: () => _showMyQRCodeDialog(context, user),
-              tooltip: 'Мой QR-код',
-            ),
+          IconButton(
+            icon: const Icon(Icons.qr_code_2_rounded, color: AppTheme.white70),
+            onPressed: () => _showMyQRCodeDialog(context, userProvider),
+            tooltip: 'Мой QR-код',
           ),
           IconButton(
             icon: const Icon(Icons.qr_code_scanner_rounded, color: AppTheme.white70),
@@ -366,210 +741,25 @@ class _FriendsScreenState extends State<FriendsScreen> {
         backgroundColor: AppTheme.accentGreen,
         child: const Icon(Icons.person_add_alt_1_rounded, color: Colors.black),
       ),
-      body: Consumer<UserProvider>(
-        builder: (context, userProvider, _) {
-          final friends = userProvider.friends.where((f) {
-            final query = _searchQuery.toLowerCase();
-            return f.name.toLowerCase().contains(query) ||
-                f.nickname.toLowerCase().contains(query);
-          }).toList();
-
-          return Column(
+      body: Stack(
+        children: [
+          TabBarView(
+            controller: _tabController,
             children: [
-              // Display personal Friend Code
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: GestureDetector(
-                  onTap: () => _copyToClipboard(userProvider.myFriendCode),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.white05,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.white12),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.copy_rounded, size: 18, color: AppTheme.accentGreen),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Мой код друга:',
-                              style: AppTheme.bodyStyle.copyWith(color: AppTheme.white70, fontSize: 14),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          userProvider.myFriendCode,
-                          style: AppTheme.titleStyle.copyWith(
-                            color: AppTheme.accentGreen,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: TextField(
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Поиск друзей...',
-                    hintStyle: const TextStyle(color: AppTheme.white38),
-                    prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.white38),
-                    filled: true,
-                    fillColor: AppTheme.white05,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  onChanged: (val) {
-                    setState(() {
-                      _searchQuery = val;
-                    });
-                  },
-                ),
-              ),
-              Expanded(
-                child: friends.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _searchQuery.isEmpty
-                                  ? Icons.people_outline_rounded
-                                  : Icons.search_off_rounded,
-                              size: 64,
-                              color: AppTheme.white38,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _searchQuery.isEmpty
-                                  ? 'У вас пока нет друзей'
-                                  : 'Ничего не найдено',
-                              style: AppTheme.headlineStyle.copyWith(
-                                color: AppTheme.white38,
-                                fontSize: 16,
-                              ),
-                            ),
-                            if (_searchQuery.isEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'Добавьте друга вручную или по QR-коду!',
-                                style: AppTheme.bodyStyle.copyWith(
-                                  color: AppTheme.white38,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ]
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: friends.length,
-                        itemBuilder: (context, index) {
-                          final friend = friends[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF13131F),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppTheme.white05),
-                            ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              leading: CircleAvatar(
-                                radius: 24,
-                                backgroundColor: AppTheme.accentGreen.withOpacity(0.1),
-                                child: Text(
-                                  friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
-                                  style: const TextStyle(
-                                    color: AppTheme.accentGreen,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                              ),
-                              title: Text(
-                                friend.name,
-                                style: AppTheme.titleStyle.copyWith(fontSize: 16),
-                              ),
-                              subtitle: Text(
-                                friend.nickname,
-                                style: AppTheme.captionStyle.copyWith(color: AppTheme.white38),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.accentGreen.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'Lvl ${friend.level}',
-                                      style: const TextStyle(
-                                        color: AppTheme.accentGreen,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.errorRed, size: 20),
-                                    onPressed: () {
-                                      showDialog(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          backgroundColor: const Color(0xFF13131F),
-                                          title: const Text('Удалить друга?', style: TextStyle(color: Colors.white)),
-                                          content: Text('Вы действительно хотите удалить ${friend.name} из друзей?', style: const TextStyle(color: AppTheme.white70)),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(ctx),
-                                              child: const Text('Отмена', style: TextStyle(color: Colors.white38)),
-                                            ),
-                                            TextButton(
-                                              onPressed: () {
-                                                userProvider.removeFriend(friend.id);
-                                                Navigator.pop(ctx);
-                                              },
-                                              child: const Text('Удалить', style: TextStyle(color: AppTheme.errorRed)),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => FriendProfileScreen(friend: friend),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-              ),
+              _buildMyFriendsTab(userProvider, friends),
+              _buildGlobalTab(userProvider),
             ],
-          );
-        },
+          ),
+          if (_isLoadingGlobalProfile)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: const Center(
+                  child: CircularProgressIndicator(color: AppTheme.accentGreen),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
