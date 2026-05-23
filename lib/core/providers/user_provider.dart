@@ -6,6 +6,7 @@ import '../services/notification_service.dart';
 import '../models/story_entry.dart';
 import '../models/friend.dart';
 import '../services/online_friends_service.dart';
+import '../services/auth_service.dart';
 import 'dart:convert';
 import 'dart:math';
 
@@ -46,6 +47,7 @@ class UserProvider extends ChangeNotifier {
   String _wallpaperPath = 'assets/images/home_bg_dark.png';
   int _userPoints = 0;
   String _myFriendCode = '';
+  String _myEmail = '';
   
   // Daily checklist: task_id -> isCompleted
   final Map<String, bool> _dailyTasks = {
@@ -196,6 +198,8 @@ class UserProvider extends ChangeNotifier {
   int get userPoints => _userPoints;
   Map<String, bool> get dailyTasks => _dailyTasks;
   String get myFriendCode => _myFriendCode;
+  String get myEmail => _myEmail;
+  bool get isAuthenticated => _myEmail.isNotEmpty;
 
   UserProvider() {
     _loadData();
@@ -257,6 +261,8 @@ class UserProvider extends ChangeNotifier {
         await prefs.setString('user_friend_code', _myFriendCode);
       }
       
+      _myEmail = prefs.getString('user_email') ?? '';
+      
       syncProfileOnline();
       notifyListeners();
     } catch (e) {
@@ -292,6 +298,7 @@ class UserProvider extends ChangeNotifier {
       await prefs.setStringList('user_completed_daily_tasks', 
           _dailyTasks.entries.where((e) => e.value).map((e) => e.key).toList());
       await prefs.setString('user_friend_code', _myFriendCode);
+      await prefs.setString('user_email', _myEmail);
       
     } catch (e) {
       debugPrint('Error saving user data: $e');
@@ -419,6 +426,77 @@ class UserProvider extends ChangeNotifier {
         level: 1 + (_userPoints ~/ 1000),
       );
     }
+    if (_myEmail.isNotEmpty) {
+      AuthService.updateAccountData(
+        email: _myEmail,
+        profileData: {
+          'name': _name,
+          'subtitle': _subtitle,
+          'points': _userPoints,
+          'level': 1 + (_userPoints ~/ 1000),
+          'friendCode': _myFriendCode,
+          'friends': _friends.map((f) => f.toJson()).toList(),
+        },
+      );
+    }
+  }
+
+  Future<void> register(String email, String password, String name) async {
+    final code = _generateFriendCode();
+    final profile = await AuthService.registerUser(
+      email: email,
+      password: password,
+      name: name,
+      friendCode: code,
+    );
+
+    if (profile != null) {
+      _myEmail = email.trim().toLowerCase();
+      _name = name.trim();
+      _subtitle = 'Пользователь DAYLO';
+      _myFriendCode = code;
+      _userPoints = 0;
+      _friends = [];
+      await _saveData();
+      syncProfileOnline();
+      notifyListeners();
+    }
+  }
+
+  Future<void> login(String email, String password) async {
+    final profile = await AuthService.loginUser(email: email, password: password);
+    if (profile != null) {
+      _myEmail = email.trim().toLowerCase();
+      _name = profile['name'] ?? 'RomaRush';
+      _subtitle = profile['subtitle'] ?? 'Пользователь DAYLO';
+      _myFriendCode = profile['friendCode'] ?? _generateFriendCode();
+      _userPoints = profile['points'] ?? 0;
+      
+      final friendsJson = profile['friends'];
+      if (friendsJson != null) {
+        final List<dynamic> decoded = friendsJson;
+        _friends = decoded.map((f) => Friend.fromJson(f)).toList();
+      } else {
+        _friends = [];
+      }
+      
+      await _saveData();
+      syncProfileOnline();
+      notifyListeners();
+    }
+  }
+
+  Future<void> logout() async {
+    _myEmail = '';
+    _name = 'RomaRush';
+    _subtitle = 'Владелец приложения DAYLO';
+    _myFriendCode = _generateFriendCode();
+    _userPoints = 0;
+    _friends = [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    await _saveData();
+    notifyListeners();
   }
 
   Future<Friend?> searchAndAddFriendOnline(String code) async {

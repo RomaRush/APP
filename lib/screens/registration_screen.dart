@@ -15,14 +15,17 @@ class RegistrationScreen extends StatefulWidget {
 }
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
-  
+
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -30,17 +33,51 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }
 
   void _onRegister() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) return;
-    
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1)); // Simulate
-    
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-        (route) => false,
-      );
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final confirm = _confirmController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirm.isEmpty) {
+      setState(() {
+        _errorMessage = 'Пожалуйста, заполните все поля';
+      });
+      return;
+    }
+
+    if (password != confirm) {
+      setState(() {
+        _errorMessage = 'Пароли не совпадают';
+      });
+      return;
+    }
+
+    if (password.length < 6) {
+      setState(() {
+        _errorMessage = 'Пароль должен быть не менее 6 символов';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await context.read<UserProvider>().register(email, password, name);
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
     }
   }
 
@@ -48,7 +85,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final bottom = MediaQuery.of(context).padding.bottom;
-    
+
     return Scaffold(
       backgroundColor: AppTheme.primaryDark,
       resizeToAvoidBottomInset: false,
@@ -61,7 +98,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               builder: (context, user, _) => Image.asset(user.wallpaperPath, fit: BoxFit.cover),
             ),
           ),
-          
+
           // Gradient Overlay
           Positioned.fill(
             child: Container(
@@ -79,84 +116,112 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               ),
             ),
           ),
-          
+
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerLeft,
-                  ).animate().fadeIn(duration: 400.ms),
-                  
-                  SizedBox(height: size.height * 0.03),
-                  
-                  Text(
-                    AppStrings.registration,
-                    style: AppTheme.headlineStyle.copyWith(fontSize: 32),
-                  ).animate().fadeIn(duration: 600.ms, delay: 100.ms).slideY(begin: 0.1, end: 0),
-                  
-                  const SizedBox(height: 8),
-                  
-                  Text(
-                    'Создайте аккаунт, чтобы начать',
-                    style: AppTheme.bodyStyle.copyWith(color: AppTheme.white54),
-                  ).animate().fadeIn(duration: 600.ms, delay: 200.ms),
-                  
-                  const SizedBox(height: 40),
-                  
-                  // Form
-                  _RegisterField(
-                    controller: _emailController,
-                    label: AppStrings.email,
-                    icon: Icons.email_outlined,
-                  ).animate().fadeIn(duration: 600.ms, delay: 300.ms).slideX(begin: -0.05, end: 0),
-                  
-                  const SizedBox(height: 16),
-                  
-                  _RegisterField(
-                    controller: _passwordController,
-                    label: AppStrings.password,
-                    icon: Icons.lock_outline_rounded,
-                    obscure: true,
-                  ).animate().fadeIn(duration: 600.ms, delay: 400.ms).slideX(begin: -0.05, end: 0),
-                  
-                  const SizedBox(height: 16),
-                  
-                  _RegisterField(
-                    controller: _confirmController,
-                    label: AppStrings.confirmPassword,
-                    icon: Icons.lock_reset_rounded,
-                    obscure: true,
-                  ).animate().fadeIn(duration: 600.ms, delay: 500.ms).slideX(begin: -0.05, end: 0),
-                  
-                  const Spacer(),
-                  
-                  // CTA
-                  SizedBox(
-                    width: double.infinity,
-                    height: 60,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _onRegister,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.white,
-                        foregroundColor: AppTheme.primaryDark,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        elevation: 0,
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryDark))
-                          : Text(AppStrings.createAccount, style: AppTheme.buttonTextStyle),
+            child: CustomScrollView(
+              physics: const ClampingScrollPhysics(),
+              slivers: [
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+                          padding: EdgeInsets.zero,
+                          alignment: Alignment.centerLeft,
+                        ).animate().fadeIn(duration: 400.ms),
+
+                        SizedBox(height: size.height * 0.015),
+
+                        Text(
+                          AppStrings.registration,
+                          style: AppTheme.headlineStyle.copyWith(fontSize: 32),
+                        ).animate().fadeIn(duration: 600.ms, delay: 100.ms).slideY(begin: 0.1, end: 0),
+
+                        const SizedBox(height: 8),
+
+                        Text(
+                          'Создайте аккаунт для синхронизации',
+                          style: AppTheme.bodyStyle.copyWith(color: AppTheme.white54),
+                        ).animate().fadeIn(duration: 600.ms, delay: 200.ms),
+
+                        const SizedBox(height: 28),
+
+                        // Form Fields
+                        _RegisterField(
+                          controller: _nameController,
+                          label: 'Ваше имя',
+                          icon: Icons.person_outline_rounded,
+                        ).animate().fadeIn(duration: 600.ms, delay: 300.ms).slideX(begin: -0.05, end: 0),
+
+                        const SizedBox(height: 14),
+
+                        _RegisterField(
+                          controller: _emailController,
+                          label: AppStrings.email,
+                          icon: Icons.email_outlined,
+                        ).animate().fadeIn(duration: 600.ms, delay: 350.ms).slideX(begin: -0.05, end: 0),
+
+                        const SizedBox(height: 14),
+
+                        _RegisterField(
+                          controller: _passwordController,
+                          label: AppStrings.password,
+                          icon: Icons.lock_outline_rounded,
+                          obscure: true,
+                        ).animate().fadeIn(duration: 600.ms, delay: 400.ms).slideX(begin: -0.05, end: 0),
+
+                        const SizedBox(height: 14),
+
+                        _RegisterField(
+                          controller: _confirmController,
+                          label: AppStrings.confirmPassword,
+                          icon: Icons.lock_reset_rounded,
+                          obscure: true,
+                        ).animate().fadeIn(duration: 600.ms, delay: 450.ms).slideX(begin: -0.05, end: 0),
+
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 16),
+                          Center(
+                            child: Text(
+                              _errorMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: AppTheme.errorRed, fontSize: 13),
+                            ),
+                          ).animate().fadeIn(),
+                        ],
+
+                        const Spacer(),
+                        const SizedBox(height: 24),
+
+                        // CTA Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 60,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _onRegister,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.white,
+                              foregroundColor: AppTheme.primaryDark,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              elevation: 0,
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryDark))
+                                : Text(AppStrings.createAccount, style: AppTheme.buttonTextStyle),
+                          ),
+                        ).animate().fadeIn(duration: 600.ms, delay: 500.ms).slideY(begin: 0.2, end: 0),
+
+                        SizedBox(height: bottom + 32),
+                      ],
                     ),
-                  ).animate().fadeIn(duration: 600.ms, delay: 600.ms).slideY(begin: 0.2, end: 0),
-                  
-                  SizedBox(height: bottom + 32),
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

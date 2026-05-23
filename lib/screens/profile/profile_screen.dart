@@ -153,7 +153,10 @@ class ProfileScreen extends StatelessWidget {
             const Divider(height: 24, color: AppTheme.white12),
             _SettingsTile(
               icon: Icons.logout_rounded, title: AppLocalizations.of(context).get('settings_logout'),
-              color: AppTheme.errorRed, onTap: () => Navigator.pop(ctx),
+              color: AppTheme.errorRed, onTap: () {
+                Navigator.pop(ctx);
+                context.read<UserProvider>().logout();
+              },
             ),
           ],
         ),

@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 // import 'package:firebase_auth/firebase_auth.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/main_screen.dart';
-// import 'screens/auth/login_screen.dart';
+import 'screens/login_screen.dart';
 // import 'screens/email_verification_screen.dart';
 import 'core/providers/finance_provider.dart';
 import 'core/providers/health_provider.dart';
@@ -133,7 +133,11 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TEMPORARY: Bypass authentication for development
-    return const MainScreen();
+    final user = Provider.of<UserProvider>(context);
+    if (user.isAuthenticated) {
+      return const MainScreen();
+    } else {
+      return const LoginScreen();
+    }
   }
 }
