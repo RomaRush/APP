@@ -3,7 +3,8 @@ import 'package:http/http.dart' as http;
 import '../models/friend.dart';
 
 class OnlineFriendsService {
-  static const String _baseUrl = 'https://kvdb.io/DayloFriendsBucket_2026_v2/';
+  static const String _setBaseUrl = 'https://setget.net/set/daylo_friend_';
+  static const String _getBaseUrl = 'https://setget.net/get/daylo_friend_';
 
   static Future<bool> publishProfile({
     required String code,
@@ -14,7 +15,7 @@ class OnlineFriendsService {
     required int level,
   }) async {
     try {
-      final url = Uri.parse('$_baseUrl$code');
+      final url = Uri.parse('$_setBaseUrl$code');
       final body = jsonEncode({
         'id': code,
         'name': name,
@@ -23,7 +24,7 @@ class OnlineFriendsService {
         'points': points,
         'level': level,
       });
-      final response = await http.put(
+      final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: body,
@@ -38,11 +39,16 @@ class OnlineFriendsService {
 
   static Future<Friend?> lookupProfile(String code) async {
     try {
-      final url = Uri.parse('$_baseUrl$code');
+      final url = Uri.parse('$_getBaseUrl$code');
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        return Friend.fromJson(decoded);
+        if (decoded is Map<String, dynamic> && decoded.containsKey('value')) {
+          final val = decoded['value'];
+          if (val != null) {
+            return Friend.fromJson(val);
+          }
+        }
       }
       return null;
     } catch (e) {

@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class AuthService {
-  static const String _baseUrl = 'https://kvdb.io/DayloAccountsBucket_2026_v2/';
+  static const String _setBaseUrl = 'https://setget.net/set/daylo_acc_';
+  static const String _getBaseUrl = 'https://setget.net/get/daylo_acc_';
 
   static String _encodeEmail(String email) {
     return base64Url.encode(utf8.encode(email.trim().toLowerCase()));
@@ -16,10 +17,10 @@ class AuthService {
   }) async {
     try {
       final key = _encodeEmail(email);
-      final url = Uri.parse('$_baseUrl$key');
+      final checkUrl = Uri.parse('$_getBaseUrl$key');
 
       // Check if user already exists
-      final checkResponse = await http.get(url);
+      final checkResponse = await http.get(checkUrl);
       if (checkResponse.statusCode == 200) {
         throw Exception('Аккаунт с таким email уже существует');
       }
@@ -35,8 +36,9 @@ class AuthService {
         'friends': [],
       };
 
-      final response = await http.put(
-        url,
+      final writeUrl = Uri.parse('$_setBaseUrl$key');
+      final response = await http.post(
+        writeUrl,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(profileData),
       );
@@ -58,15 +60,20 @@ class AuthService {
   }) async {
     try {
       final key = _encodeEmail(email);
-      final url = Uri.parse('$_baseUrl$key');
+      final url = Uri.parse('$_getBaseUrl$key');
 
       final response = await http.get(url);
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        if (data['password'] == password) {
-          return data;
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic> && decoded.containsKey('value')) {
+          final data = decoded['value'] as Map<String, dynamic>;
+          if (data['password'] == password) {
+            return data;
+          } else {
+            throw Exception('Неверный пароль');
+          }
         } else {
-          throw Exception('Неверный пароль');
+          throw Exception('Ошибка структуры данных сервера');
         }
       } else {
         throw Exception('Пользователь с таким email не найден');
@@ -84,23 +91,27 @@ class AuthService {
   }) async {
     try {
       final key = _encodeEmail(email);
-      final url = Uri.parse('$_baseUrl$key');
+      final getUrl = Uri.parse('$_getBaseUrl$key');
 
       // Fetch existing data first to preserve password
-      final getResponse = await http.get(url);
+      final getResponse = await http.get(getUrl);
       if (getResponse.statusCode == 200) {
-        final existing = jsonDecode(getResponse.body) as Map<String, dynamic>;
-        final updatedData = {
-          ...existing,
-          ...profileData,
-        };
+        final decoded = jsonDecode(getResponse.body);
+        if (decoded is Map<String, dynamic> && decoded.containsKey('value')) {
+          final existing = decoded['value'] as Map<String, dynamic>;
+          final updatedData = {
+            ...existing,
+            ...profileData,
+          };
 
-        final response = await http.put(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(updatedData),
-        );
-        return response.statusCode == 200 || response.statusCode == 201;
+          final writeUrl = Uri.parse('$_setBaseUrl$key');
+          final response = await http.post(
+            writeUrl,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(updatedData),
+          );
+          return response.statusCode == 200 || response.statusCode == 201;
+        }
       }
       return false;
     } catch (e) {
