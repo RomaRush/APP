@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/constants/app_strings.dart';
 import '../core/providers/user_provider.dart';
-import 'main_screen.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -67,11 +66,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     try {
       await context.read<UserProvider>().register(email, password, name);
       if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const MainScreen()),
-          (route) => false,
-        );
+        Navigator.pop(context);
       }
     } catch (e) {
       setState(() {

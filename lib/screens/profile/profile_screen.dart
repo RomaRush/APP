@@ -156,6 +156,7 @@ class ProfileScreen extends StatelessWidget {
               color: AppTheme.errorRed, onTap: () {
                 Navigator.pop(ctx);
                 context.read<UserProvider>().logout();
+                Navigator.of(context).popUntil((route) => route.isFirst);
               },
             ),
           ],
