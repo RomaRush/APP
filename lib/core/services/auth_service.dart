@@ -6,7 +6,7 @@ class AuthService {
   static const String _getBaseUrl = 'https://setget.net/get/daylo_acc_';
 
   static String _encodeEmail(String email) {
-    return base64Url.encode(utf8.encode(email.trim().toLowerCase()));
+    return base64Url.encode(utf8.encode(email.trim().toLowerCase())).replaceAll('=', '');
   }
 
   static Future<Map<String, dynamic>?> registerUser({
