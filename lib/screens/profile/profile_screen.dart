@@ -13,6 +13,7 @@ import 'achievements_screen.dart';
 import '../../core/models/story_entry.dart';
 import '../stats/stats_screen.dart';
 import '../../core/l10n/app_localizations.dart';
+import 'friends_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -459,7 +460,12 @@ class ProfileScreen extends StatelessWidget {
                                 children: [
                                   Expanded(child: _StatCell(value: '${user.storyImages.length}', label: 'Дней')),
                                   Container(width: 1, height: 40, color: AppTheme.white12),
-                                  Expanded(child: _StatCell(value: '${user.friendsCount}', label: 'Друзей')),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FriendsScreen())),
+                                      child: _StatCell(value: '${user.friendsCount}', label: 'Друзей'),
+                                    ),
+                                  ),
                                   Container(width: 1, height: 40, color: AppTheme.white12),
                                   Expanded(
                                     child: GestureDetector(

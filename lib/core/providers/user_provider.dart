@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_service.dart';
 import '../models/story_entry.dart';
+import '../models/friend.dart';
+import '../services/online_friends_service.dart';
+import 'dart:convert';
+import 'dart:math';
 
 
 class Achievement {
@@ -41,6 +45,7 @@ class UserProvider extends ChangeNotifier {
   String? _avatarPath;
   String _wallpaperPath = 'assets/images/home_bg_dark.png';
   int _userPoints = 0;
+  String _myFriendCode = '';
   
   // Daily checklist: task_id -> isCompleted
   final Map<String, bool> _dailyTasks = {
@@ -54,7 +59,6 @@ class UserProvider extends ChangeNotifier {
   DateTime _lastDailyReset = DateTime.now();
 
 
-  // Stats
   int _storyDaysCount = 0; 
   
   Locale _appLocale = const Locale('ru');
@@ -62,12 +66,8 @@ class UserProvider extends ChangeNotifier {
 
   Locale get appLocale => _appLocale;
   bool get notificationsEnabled => _notificationsEnabled;
-  // Prompt: "по умолчанию количество друзей ачивок и стродиеев должно быть ноль"
-  // Okay, I will set them to 0 as requested, although screenshot shows otherwise.
-  // Actually, let's respect the "demo" feeling of the screenshot but valid request "must be zero, increasing as user adds".
-  // I will init at 0.
   
-  int _friendsCount = 0;
+  List<Friend> _friends = [];
   
   // Store actual content?
   List<StoryEntry> _storyImages = [];
@@ -188,12 +188,14 @@ class UserProvider extends ChangeNotifier {
   // But strictly, let's keep separate counters if needed. The screenshot shows 148, but only few images.
   // I'll make them standalone counters for flexibility, but update storyDaysCount when adding a story.
   
-  int get friendsCount => _friendsCount;
+  int get friendsCount => _friends.length;
+  List<Friend> get friends => _friends;
   int get achievementsCount => _achievements.where((a) => a.isUnlocked).length;
   List<Achievement> get achievements => _achievements;
   List<StoryEntry> get storyImages => _storyImages;
   int get userPoints => _userPoints;
   Map<String, bool> get dailyTasks => _dailyTasks;
+  String get myFriendCode => _myFriendCode;
 
   UserProvider() {
     _loadData();
@@ -208,7 +210,14 @@ class UserProvider extends ChangeNotifier {
       _avatarPath = prefs.getString('user_avatar_path');
       
       _storyDaysCount = prefs.getInt('user_story_days') ?? 0;
-      _friendsCount = prefs.getInt('user_friends_count') ?? 0;
+      
+      final friendsJson = prefs.getString('user_friends_list');
+      if (friendsJson != null) {
+        final List<dynamic> decoded = jsonDecode(friendsJson);
+        _friends = decoded.map((f) => Friend.fromJson(f)).toList();
+      } else {
+        _friends = [];
+      }
       _wallpaperPath = prefs.getString('user_wallpaper_path') ?? 'assets/images/home_bg_dark.png';
       
       final localeCode = prefs.getString('user_locale');
@@ -241,6 +250,14 @@ class UserProvider extends ChangeNotifier {
       }
       
       _checkDailyReset();
+      
+      _myFriendCode = prefs.getString('user_friend_code') ?? '';
+      if (_myFriendCode.isEmpty) {
+        _myFriendCode = _generateFriendCode();
+        await prefs.setString('user_friend_code', _myFriendCode);
+      }
+      
+      syncProfileOnline();
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading user data: $e');
@@ -257,7 +274,9 @@ class UserProvider extends ChangeNotifier {
         await prefs.setString('user_avatar_path', _avatarPath!);
       }
       await prefs.setInt('user_story_days', _storyDaysCount);
-      await prefs.setInt('user_friends_count', _friendsCount);
+      
+      final friendsJson = jsonEncode(_friends.map((f) => f.toJson()).toList());
+      await prefs.setString('user_friends_list', friendsJson);
       await prefs.setString('user_wallpaper_path', _wallpaperPath);
       await prefs.setString('user_locale', _appLocale.languageCode);
       await prefs.setBool('user_notifications_enabled', _notificationsEnabled);
@@ -272,6 +291,7 @@ class UserProvider extends ChangeNotifier {
       await prefs.setString('user_last_reset', _lastDailyReset.toIso8601String());
       await prefs.setStringList('user_completed_daily_tasks', 
           _dailyTasks.entries.where((e) => e.value).map((e) => e.key).toList());
+      await prefs.setString('user_friend_code', _myFriendCode);
       
     } catch (e) {
       debugPrint('Error saving user data: $e');
@@ -282,6 +302,7 @@ class UserProvider extends ChangeNotifier {
     _name = newName;
     _subtitle = newSubtitle;
     _saveData();
+    syncProfileOnline();
     notifyListeners();
   }
 
@@ -337,8 +358,16 @@ class UserProvider extends ChangeNotifier {
   }
   
   // Manual increment for stats (as implied by "adds from user")
-  void incrementFriends() {
-    _friendsCount++;
+  void addFriend(Friend friend) {
+    if (!_friends.any((f) => f.nickname.toLowerCase() == friend.nickname.toLowerCase())) {
+      _friends.add(friend);
+      _saveData();
+      notifyListeners();
+    }
+  }
+  
+  void removeFriend(String id) {
+    _friends.removeWhere((f) => f.id == id);
     _saveData();
     notifyListeners();
   }
@@ -367,8 +396,47 @@ class UserProvider extends ChangeNotifier {
       final points = 50 + (DateTime.now().millisecond % 51); 
       _userPoints += points;
       _saveData();
+      syncProfileOnline();
       notifyListeners();
     }
+  }
+
+  String _generateFriendCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rand = Random();
+    final code = List.generate(6, (index) => chars[rand.nextInt(chars.length)]).join();
+    return 'DL-$code';
+  }
+
+  void syncProfileOnline() {
+    if (_myFriendCode.isNotEmpty) {
+      OnlineFriendsService.publishProfile(
+        code: _myFriendCode,
+        name: _name,
+        nickname: '@${_name.toLowerCase().replaceAll(' ', '_')}',
+        bio: _subtitle,
+        points: _userPoints,
+        level: 1 + (_userPoints ~/ 1000),
+      );
+    }
+  }
+
+  Future<Friend?> searchAndAddFriendOnline(String code) async {
+    final cleanCode = code.trim().toUpperCase();
+    if (cleanCode == _myFriendCode) {
+      throw Exception('Нельзя добавить самого себя');
+    }
+    if (_friends.any((f) => f.id == cleanCode)) {
+      throw Exception('Этот пользователь уже в списке друзей');
+    }
+    final friend = await OnlineFriendsService.lookupProfile(cleanCode);
+    if (friend != null) {
+      _friends.add(friend);
+      _saveData();
+      notifyListeners();
+      return friend;
+    }
+    return null;
   }
 
   void _checkDailyReset() {
